@@ -5,8 +5,7 @@ do
     lastfile1=(`ls -tri ridf/*.ridf | tail -n 1`)
     echo ${lastfile1[1]}
 
-    ./ana ${lastfile1[1]} root/online.root -online -web 5920 &
-#    ./ana ${lastfile1[1]} root/online.root -online  -web 5920 &
+    ./enana ${lastfile1[1]} root/online.root -online -web 5920 &
     pid=$!
     echo $pid
 
