@@ -12,7 +12,7 @@ public:
   void SetTDCGeo(unsigned int geo);
   void SetTDCCh(unsigned int *ch);
   int analyze(evtdata *evt);
-  int IsGoodHit();
+  bool IsGoodHit();
   int GetPosRaw(int ixy);
   double GetPosCal(int ixy);
   

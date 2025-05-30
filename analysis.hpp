@@ -104,6 +104,8 @@ private:
   // output histograms
   TH1F *hmadc[N_MADC_CH];
 
+  TH1F *hppac_good[4];
+
 
   // list of histograms
   vector<TH1F*> vec_th1;

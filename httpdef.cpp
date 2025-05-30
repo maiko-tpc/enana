@@ -13,6 +13,10 @@ void analysis::MakeTHttp(int portnum){
   for(int i=0; i<N_MADC_CH; i++){
     serv->Register("/MADC", hmadc[i]);
   }
+
+  for(int i=0; i<4; i++){
+    serv->Register("/PPAC", hppac_good[i]);
+  }
 }
 
 void analysis::HttpHistReset(){

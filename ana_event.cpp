@@ -119,9 +119,9 @@ int ana_ppac::analyze(evtdata *evt){
   return 0;
 }
 
-int ana_ppac::IsGoodHit(){
+bool ana_ppac::IsGoodHit(){
   for(int i=0; i<4; i++){
-    if(tdc_hit[i]==0) return 0;
+    if(tdc_hit[i]!=1) return 0;
   }
   return 1;
 }
