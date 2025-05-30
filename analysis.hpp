@@ -77,6 +77,7 @@ public:
 
   // defined in httpdef.cpp
   void MakeTHttp(int portnum);
+  void HttpHistReset();  
 
   // defined in ana_event.cpp
   void ana_event();
@@ -103,6 +104,10 @@ private:
   // output histograms
   TH1F *hmadc[N_MADC_CH];
 
+
+  // list of histograms
+  vector<TH1F*> vec_th1;
+  vector<TH2F*> vec_th2;  
   
   enum RIDF_CID{
   RIDF_EF_BLOCK,

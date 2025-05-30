@@ -24,6 +24,9 @@ using namespace std;
 void abrt_handler(int sig, siginfo_t *info, void *ctx);
 volatile sig_atomic_t eflag;
 
+void clear_handler(int sig);
+int CLEAR_FLAG=0;
+
 int main(int argc, char *argv[]) {
 
   /* define action when Cntl-c is given */
@@ -36,7 +39,10 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  /* Define action for clear button */
+  signal(SIGUSR2, clear_handler);  // SIGID=12 (user definition signal2)
 
+  
   /* Get pid of myself */
   pid_t my_pid = getpid();
   printf("PID: %d\n", (int)my_pid);
@@ -126,4 +132,9 @@ void abrt_handler(int sig, siginfo_t *info, void *ctx) {
   printf("\n");
   eflag = 1;
   exit(0);
+}
+
+void clear_handler(int signal){
+  printf("clear signal!\n");
+  CLEAR_FLAG = 1;
 }

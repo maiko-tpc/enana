@@ -11,6 +11,9 @@ analysis::analysis(){
   opt.web_flag=0;
   opt.useage_flag=1;
   sprintf(opt.parfname, "par/default.par");
+
+  vec_th1.clear();
+  vec_th2.clear();  
 }
 
 analysis::~analysis(){

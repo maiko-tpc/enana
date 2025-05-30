@@ -17,6 +17,14 @@ void analysis::ana_event(){
   evt.ppac_f3u_good = ppac_f3u.IsGoodHit();
   evt.ppac_f3d_good = ppac_f3d.IsGoodHit();  
 
+
+  // http control
+  extern int CLEAR_FLAG;
+
+  if(GetWeb() && CLEAR_FLAG==1){
+    HttpHistReset();  // only reset when the bottun is pressed
+    CLEAR_FLAG=0;
+  }
 }
 
 
