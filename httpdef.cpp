@@ -17,6 +17,9 @@ void analysis::MakeTHttp(int portnum){
   for(int i=0; i<4; i++){
     serv->Register("/PPAC", hppac_good[i]);
   }
+  for(int i=0; i<4; i++){
+    serv->Register("/PPAC", hppac_pos2d[i]);
+  }
 }
 
 void analysis::HttpHistReset(){

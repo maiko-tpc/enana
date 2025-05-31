@@ -6,6 +6,9 @@
 const int N_MADC = 1;
 const int N_MADC_CH = 32*N_MADC;
 
+const int N_PPAC = 4;
+const int N_PPAC_CH = 5;
+
 struct optdata{
   char bldfname[256];
   char rootfname[256];
@@ -50,6 +53,11 @@ struct evtdata{
   madc32_data madc;
 
   unsigned int eve;
+
+  bool ppac_good[N_PPAC];
+  int ppac_tdc[N_PPAC][N_PPAC_CH];
+  int ppac_pos_raw[N_PPAC][2];  
+  
 };
 
 

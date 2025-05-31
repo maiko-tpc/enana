@@ -104,8 +104,8 @@ private:
   // output histograms
   TH1F *hmadc[N_MADC_CH];
 
-  TH1F *hppac_good[4];
-
+  TH1F *hppac_good[N_PPAC];
+  TH2F *hppac_pos2d[N_PPAC];
 
   // list of histograms
   vector<TH1F*> vec_th1;
@@ -150,8 +150,7 @@ private:
   evtdata evt;
   optdata opt;
 
-  ana_ppac ppac_f2u, ppac_f2d;
-  ana_ppac ppac_f3u, ppac_f3d;  
+  ana_ppac ppac[N_PPAC];
   
 };
 

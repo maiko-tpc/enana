@@ -7,17 +7,24 @@ void analysis::ana_event(){
   // MADC analysis
   ana_madc32();
 
-  ppac_f2u.analyze(&evt);
-  ppac_f2d.analyze(&evt);  
-  ppac_f3u.analyze(&evt);
-  ppac_f3d.analyze(&evt);  
+  // PPAC ana
+  for(int i=0; i<N_PPAC; i++){
+    ppac[i].analyze(&evt);
+    evt.ppac_good[i] = ppac[i].IsGoodHit();
+  }
+  
+  for(int i=0; i<N_PPAC; i++){
+    for(int j=0; j<N_PPAC_CH; j++){
+      evt.ppac_tdc[i][j] = ppac[i].tdc_val[j];
+    }
+  }
 
-  evt.ppac_f2u_good = ppac_f2u.IsGoodHit();
-  evt.ppac_f2d_good = ppac_f2d.IsGoodHit();  
-  evt.ppac_f3u_good = ppac_f3u.IsGoodHit();
-  evt.ppac_f3d_good = ppac_f3d.IsGoodHit();  
-
-
+  for(int i=0; i<N_PPAC; i++){
+    for(int j=0; j<2; j++){ // X and Y
+      evt.ppac_pos_raw[i][j] = ppac[i].pos_raw[j];
+    }
+  }
+  
   // http control
   extern int CLEAR_FLAG;
 
@@ -32,10 +39,13 @@ void analysis::init_event(){
   evt.v1190_hit_all.clear();
   evt.mxdc32_hit_all.clear();  
 
-  evt.ppac_f2u_good=0;
-  evt.ppac_f2d_good=0;  
-  evt.ppac_f3u_good=0;
-  evt.ppac_f3d_good=0;  
+  for(int i=0; i<N_PPAC; i++){
+    evt.ppac_good[i]=0;
+
+    for(int j=0; j<2; j++){
+      evt.ppac_pos_raw[i][j] = -1000;
+    }
+  }
 }
 
 int analysis::ana_madc32(){
@@ -64,6 +74,10 @@ ana_ppac::ana_ppac(){
 }
 
 ana_ppac::~ana_ppac(){
+}
+
+void ana_ppac::SetPPACi(int index){
+  ippac = index;
 }
 
 void ana_ppac::SetTDCGeo(unsigned int geo){
@@ -107,7 +121,7 @@ int ana_ppac::analyze(evtdata *evt){
 
   // calculate position
   if(tdc_hit[0]==1 && tdc_hit[2]==1){ // X=L-R
-    pos_raw[0] = tdc_val[0] - tdc_val[2];
+    pos_raw[0] = tdc_val[2] - tdc_val[0];
     pos_cal[0] = pos_raw[0];
   }
 

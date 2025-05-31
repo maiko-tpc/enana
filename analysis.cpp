@@ -24,24 +24,18 @@ void analysis::SetPID(int pidnum){
 }
 
 void analysis::set_ana(){
-  unsigned int ppac_f2u_ch[5]={0,1,2,3,4};
-  unsigned int ppac_f2d_ch[5]={5,6,7,8,9};  
-  unsigned int ppac_f3u_ch[5]={16,17,18,19,20};
-  unsigned int ppac_f3d_ch[5]={21,22,23,24,25};  
+
+  // CH mapping of TDC
   int ppac_geo = 7;
- 
-  ppac_f2u.SetTDCGeo(ppac_geo);
-  ppac_f2u.SetTDCCh(ppac_f2u_ch);
-
-  ppac_f2d.SetTDCGeo(ppac_geo);
-  ppac_f2d.SetTDCCh(ppac_f2d_ch);
-
-  ppac_f3u.SetTDCGeo(ppac_geo);
-  ppac_f3u.SetTDCCh(ppac_f3u_ch);
-
-  ppac_f3d.SetTDCGeo(ppac_geo);
-  ppac_f3d.SetTDCCh(ppac_f3d_ch);
+  unsigned int ppac_ch[N_PPAC][5] = {{0,1,2,3,4}, {5,6,7,8,9},
+				     {16,17,18,19,20}, {21,22,23,24,25}};
   
+  for(int i=0; i<N_PPAC; i++){
+    ppac[i].SetPPACi(i);
+    ppac[i].SetTDCGeo(ppac_geo);
+    ppac[i].SetTDCCh(ppac_ch[i]);
+  }
+
 }
 
 void analysis::SetUseage(){

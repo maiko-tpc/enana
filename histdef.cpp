@@ -1,7 +1,7 @@
 #include "analysis.hpp"
 
 void analysis::HistDef(){
-  char *ppac_name[4] = {"F2U", "F2D", "F3U", "F3D"};
+  char *ppac_name[N_PPAC] = {"F2U", "F2D", "F3U", "F3D"};
 
   for(int i=0; i<N_MADC_CH; i++){
     hmadc[i] =  new TH1F(Form("h_madc%d", i),
@@ -10,12 +10,19 @@ void analysis::HistDef(){
     vec_th1.push_back(hmadc[i]);
   }
 
-  for(int i=0; i<4; i++){
+  for(int i=0; i<N_PPAC; i++){
     hppac_good[i] = new TH1F(Form("h_ppac%d_good", i),
 			     Form("%s PPAC good hit", ppac_name[i]),
 			     2, 0, 2);
     vec_th1.push_back(hppac_good[i]);
+
+    hppac_pos2d[i] = new TH2F(Form("h_ppac%d_pos2d", i),
+			      Form("%s PPAC 2D position", ppac_name[i]),
+			      500,-1000,1000, 500,-1000,1000);
+    vec_th2.push_back(hppac_pos2d[i]);
+    hppac_pos2d[i]->SetDrawOption("colz");
   }
+  
 } // end of histdef
 
 void analysis::HistFill(){
@@ -23,9 +30,12 @@ void analysis::HistFill(){
     hmadc[i]->Fill(evt.madc.adc[i]);
   }
 
-  hppac_good[0]->Fill(evt.ppac_f2u_good);
-  hppac_good[1]->Fill(evt.ppac_f2d_good);
-  hppac_good[2]->Fill(evt.ppac_f3u_good);
-  hppac_good[3]->Fill(evt.ppac_f3d_good);  
+  for(int i=0; i<N_PPAC; i++){
+    hppac_good[i]->Fill(evt.ppac_good[i]);
+
+    if(evt.ppac_good[i]==1){
+      hppac_pos2d[i]->Fill(evt.ppac_pos_raw[i][0], evt.ppac_pos_raw[i][1]);
+    }
+  }
 }
 
