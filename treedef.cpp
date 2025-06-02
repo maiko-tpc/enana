@@ -10,7 +10,7 @@ void analysis::TreeDef(){
 	       Form("adc[%d]/i:counter[%d]/l",
                     N_MADC_CH, N_MADC));
   
-  tree->Branch("ppac_good", evt.ppac_good, "ppac_good[4]/I");
+  tree->Branch("ppac_good", evt.ppac_good, "ppac_good[4]/O");
   
   tree->Branch("ppac_pos_raw", evt.ppac_pos_raw,
 	       "ppac_pos_raw[4][2]/I");

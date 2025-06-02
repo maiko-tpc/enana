@@ -47,9 +47,6 @@ struct evtdata{
   std::vector<v1190_hit> v1190_hit_all;
   std::vector<mxdc32_hit> mxdc32_hit_all;  
 
-  bool ppac_f2u_good, ppac_f2d_good;
-  bool ppac_f3u_good, ppac_f3d_good;  
-
   madc32_data madc;
 
   unsigned int eve;
