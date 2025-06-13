@@ -3,7 +3,8 @@
 
 analysis::analysis(){
   evt.eve=0;
-
+  evt.sleep_cnt=0;
+  
   sprintf(opt.rootfname, "out.root");
   opt.online_flag=0;
   opt.last_flag=0;
@@ -14,6 +15,19 @@ analysis::analysis(){
 
   vec_th1.clear();
   vec_th2.clear();  
+
+  // read the PID files
+  evt.use_pid_f2=0;
+  evt.use_pid_f3=0;  
+
+  TFile *file_pid_f2 = new TFile("macro/pid_f2.root");
+  if(file_pid_f2->IsOpen()) pid_f2 = (TCutG*)file_pid_f2->Get("pidcut_f2");
+  if(pid_f2->GetN()>2) evt.use_pid_f2=1;
+  
+  TFile *file_pid_f3 = new TFile("macro/pid_f3.root");
+  if(file_pid_f3->IsOpen()) pid_f3 = (TCutG*)file_pid_f3->Get("pidcut_f3");
+  if(pid_f3->GetN()>2) evt.use_pid_f3=1;
+
 }
 
 analysis::~analysis(){
@@ -97,18 +111,16 @@ int analysis::MakeROOT(string fname){
   return 0;
 }
 
-int analysis::CloseROOT(){
-  tree->Write();
-  outroot->Close();
-  return 0;
-}
 
 int analysis::analyze(){
-
+  extern int STOP_FLAG;
+  
   blk=0;
   unsigned int tmpbuf;
   
   set_ana();
+
+  printf("set_ana\n");
   
   while(1){
     
@@ -163,13 +175,20 @@ int analysis::analyze(){
     if(gSystem->ProcessEvents()) break;
     
     if( opt.online_flag==1 && IsRIDFeof()){
-      printf("Waiting for data... (eve: %d)\r",eve);
+      printf("Waiting for data... (eve: %d) sleep_cnt=%d\r",evt.eve, evt.sleep_cnt);
       fflush(stdout);
       ClearRIDFError();
-      usleep(100000);
+      //usleep(100000);
+      sleep(1);
+      evt.sleep_cnt++;
     }
     
     if( opt.online_flag==0 && IsRIDFeof()){
+      break;
+    }
+
+    if(STOP_FLAG==1){
+      printf("bye-bye!\n");
       break;
     }
   } // end of while
@@ -255,7 +274,13 @@ int analysis::dec_event(unsigned int evesize){
     case RIDF_NCSCALER32:
       break;
     default:
-      printf("Error: Invalid class ID in event: %d\n",cid);
+      printf("Error: Invalid class ID: %d\n",cid);
+
+      // skip this event
+      while(wrdcnt<evesize){
+	ridf.read((char*)buf_header, sizeof(buf_header));
+	wrdcnt+=(sizeof(buf_header))*2;
+      }
       break;
 
     } // end of switch(cid)
@@ -300,6 +325,9 @@ int analysis::dec_segment(unsigned int segsize){
     break;
 
   case seg_v792:
+    break;
+
+  case 4:
     break;
     
   default:

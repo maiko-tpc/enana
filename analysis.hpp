@@ -21,6 +21,7 @@
 #include <TCanvas.h>
 #include <TF1.h>
 #include <TLatex.h>
+#include <TCutG.h>
 
 #include <THttpServer.h>
 #include <TInterpreter.h>
@@ -83,7 +84,10 @@ public:
   void ana_event();
   void init_event();
   int ana_madc32();
-  
+
+  void ana_ssd();
+  void ana_rf();
+  void ana_pl();    
 private:
   int pid;
 
@@ -100,13 +104,26 @@ private:
   TTree *tree;
 
   THttpServer* serv;
-  
+
+  // PID file
+  TCutG *pid_f2;
+  TCutG *pid_f3;  
+
   // output histograms
   TH1F *hmadc[N_MADC_CH];
 
   TH1F *hppac_good[N_PPAC];
   TH2F *hppac_pos2d[N_PPAC];
+  TH2F *hppac_pos2d_cal[N_PPAC];  
 
+  TH2F *hppac_track[2][2]; // [F2/F3][X/Y]
+  TH2F *hppac_track_pid[2][2]; // [F2/F3][X/Y]  
+
+  TH1F *hssd_ene[N_SSD];
+
+  TH2F *hpid_f2;
+  TH2F *hpid_f3;  
+  
   // list of histograms
   vector<TH1F*> vec_th1;
   vector<TH2F*> vec_th2;  

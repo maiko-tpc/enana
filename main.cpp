@@ -23,6 +23,7 @@ using namespace std;
 // signal handler
 void abrt_handler(int sig, siginfo_t *info, void *ctx);
 volatile sig_atomic_t eflag;
+int STOP_FLAG=0;
 
 void clear_handler(int sig);
 int CLEAR_FLAG=0;
@@ -128,10 +129,10 @@ int main(int argc, char *argv[]) {
 void abrt_handler(int sig, siginfo_t *info, void *ctx) {
   printf("\n");
   printf("Interrupt is detected!\n");
-  printf("Saving output file...\n");
   printf("\n");
   eflag = 1;
-  exit(0);
+  STOP_FLAG=1;
+  //  exit(0);
 }
 
 void clear_handler(int signal){

@@ -20,7 +20,29 @@ void analysis::MakeTHttp(int portnum){
   for(int i=0; i<4; i++){
     serv->Register("/PPAC", hppac_pos2d[i]);
   }
-}
+  for(int i=0; i<4; i++){
+    serv->Register("/PPAC", hppac_pos2d_cal[i]);
+  }
+
+  for(int i=0; i<2; i++){
+    for(int j=0; j<2; j++){
+      serv->Register("/PPAC", hppac_track[i][j]);
+    }
+  }
+  for(int i=0; i<2; i++){
+    for(int j=0; j<2; j++){
+      serv->Register("/PPAC", hppac_track_pid[i][j]);
+    }
+  }
+
+  for(int i=0; i<N_SSD; i++){
+    serv->Register("/SSD", hssd_ene[i]);
+  }
+
+  serv->Register("/PID", hpid_f2);
+  serv->Register("/PID", hpid_f3);  
+
+} // end of MakeHttp()
 
 void analysis::HttpHistReset(){
   printf("clear function\n");

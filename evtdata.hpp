@@ -9,6 +9,11 @@ const int N_MADC_CH = 32*N_MADC;
 const int N_PPAC = 4;
 const int N_PPAC_CH = 5;
 
+const int N_SSD = 2;
+const int N_RF = 4;
+
+const int N_PL_CH = 4;
+
 struct optdata{
   char bldfname[256];
   char rootfname[256];
@@ -43,10 +48,18 @@ typedef struct madc32_data{
   unsigned long int counter[N_MADC];
 } madc32_data;
 
+typedef struct ssd_data{
+  int adc[N_SSD];
+  float ene[N_SSD];
+  int tdc[N_SSD];
+} ssd_data;
+
 struct evtdata{
   std::vector<v1190_hit> v1190_hit_all;
   std::vector<mxdc32_hit> mxdc32_hit_all;  
 
+  int sleep_cnt;
+  
   madc32_data madc;
 
   unsigned int eve;
@@ -54,7 +67,22 @@ struct evtdata{
   bool ppac_good[N_PPAC];
   int ppac_tdc[N_PPAC][N_PPAC_CH];
   int ppac_pos_raw[N_PPAC][2];  
+  float ppac_pos_cal[N_PPAC][2];
+  float ppac_ang[2][2];
   
+  double ssd_ene[2];
+
+  ssd_data ssd;
+
+  int ref_tdc;
+  int rf[N_RF];
+
+  int pl_tdc[N_PL_CH];
+
+  bool use_pid_f2;
+  bool use_pid_f3;
+  bool is_pid_f2;
+  bool is_pid_f3;  
 };
 
 
