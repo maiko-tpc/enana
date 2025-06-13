@@ -101,8 +101,8 @@ void analysis::HistFill(){
   // F2
   if( evt.ppac_good[0]==1 && evt.ppac_good[1]==1){
     for(z=min_z; z<max_z; z+=step_z){
-      x = evt.ppac_pos_cal[1][0] + z*evt.ppac_ang[0][0];
-      y = evt.ppac_pos_cal[1][1] + z*evt.ppac_ang[0][1];
+      x = evt.ppac_pos_cal[0][0] + z*evt.ppac_ang[0][0];
+      y = evt.ppac_pos_cal[0][1] + z*evt.ppac_ang[0][1];
       hppac_track[0][0]->Fill(z, x);
       hppac_track[0][1]->Fill(z, y);      
 
@@ -116,8 +116,8 @@ void analysis::HistFill(){
   // F3
   if( evt.ppac_good[2]==1 && evt.ppac_good[3]==1){
     for(z=min_z; z<max_z; z+=step_z){
-      x = evt.ppac_pos_cal[3][0] + z*evt.ppac_ang[1][0];
-      y = evt.ppac_pos_cal[3][1] + z*evt.ppac_ang[1][1];
+      x = evt.ppac_pos_cal[2][0] + z*evt.ppac_ang[1][0];
+      y = evt.ppac_pos_cal[2][1] + z*evt.ppac_ang[1][1];
       hppac_track[1][0]->Fill(z, x);
       hppac_track[1][1]->Fill(z, y);      
       if(evt.is_pid_f3==1){
