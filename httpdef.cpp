@@ -35,6 +35,10 @@ void analysis::MakeTHttp(int portnum){
     }
   }
 
+  serv->Register("/PPAC", h_attpc_x);
+  serv->Register("/PPAC", h_attpc_y);
+  serv->Register("/PPAC", h_attpc_xy);    
+  
   for(int i=0; i<N_SSD; i++){
     serv->Register("/SSD", hssd_ene[i]);
   }

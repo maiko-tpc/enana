@@ -268,10 +268,13 @@ int analysis::dec_event(unsigned int evesize){
       wrdcnt+=dec_segment(blksize);
       break;
     case RIDF_NCSCALER:
+      printf("sca\n");
       break;
     case RIDF_CSCALER:
+      printf("csca\n");
       break;
     case RIDF_NCSCALER32:
+      printf("sca32\n");
       break;
     default:
       printf("Error: Invalid class ID: %d\n",cid);

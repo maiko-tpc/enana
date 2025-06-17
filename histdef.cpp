@@ -1,9 +1,10 @@
 #include "analysis.hpp"
 
 const double min_z = -500;
-const double max_z = 3000;
+const double max_z = 3500;
 const double step_z = 1;
 int size_z = (max_z-min_z)/step_z;
+const double attpc_z = 2400;
 
 void analysis::HistDef(){
   char *ppac_name[N_PPAC] = {"F2U", "F2D", "F3U", "F3D"};
@@ -60,6 +61,17 @@ void analysis::HistDef(){
     }
   }
   
+  h_attpc_x  = new TH1F("h_attpc_x",  Form("Beam X  pos at ATTPC (z=%d)", (int)attpc_z),
+		       200, -50, 50);
+  h_attpc_y  = new TH1F("h_attpc_y",  Form("Beam Y  pos at ATTPC (z=%d)", (int)attpc_z),
+		       200, -50, 50);
+  h_attpc_xy = new TH2F("h_attpc_xy", Form("Beam XY pos at ATTPC (z=%d)", (int)attpc_z),
+			200, -50, 50, 200, -50, 50);
+
+  vec_th1.push_back(h_attpc_x);
+  vec_th1.push_back(h_attpc_y);
+  vec_th2.push_back(h_attpc_xy);    
+
   for(int i=0; i<N_SSD; i++){
     hssd_ene[i] = new TH1F(Form("h_ssd_ene%d", i), Form("SSD energy ch%d", i),
 			   512, 0, 60);
@@ -110,6 +122,12 @@ void analysis::HistFill(){
 	hppac_track_pid[0][0]->Fill(z, x);
 	hppac_track_pid[0][1]->Fill(z, y);      
       }
+      
+      if( (z-0.5)<attpc_z && (z+0.5)>attpc_z ){
+	h_attpc_x->Fill(x);
+	h_attpc_y->Fill(y);
+	h_attpc_xy->Fill(x,y);		
+      }
     }
   }
 
@@ -150,6 +168,10 @@ int analysis::CloseROOT(){
       hppac_track_pid[i][j]->Write();
     }
   }
+
+  h_attpc_x->Write();
+  h_attpc_y->Write();
+  h_attpc_xy->Write();    
   
   hpid_f2->Write();
   hpid_f3->Write();  

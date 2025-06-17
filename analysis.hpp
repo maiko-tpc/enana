@@ -119,6 +119,10 @@ private:
   TH2F *hppac_track[2][2]; // [F2/F3][X/Y]
   TH2F *hppac_track_pid[2][2]; // [F2/F3][X/Y]  
 
+  TH1F *h_attpc_x;
+  TH1F *h_attpc_y;  
+  TH2F *h_attpc_xy;
+  
   TH1F *hssd_ene[N_SSD];
 
   TH2F *hpid_f2;
