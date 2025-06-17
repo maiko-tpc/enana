@@ -152,30 +152,18 @@ void analysis::HistFill(){
 } /// end of HistFill()
 
 int analysis::CloseROOT(){
-  tree->Write();
 
-  for(int i=0; i<N_PPAC; i++){
-    hppac_pos2d_cal[i]->Write();
+  int size1 = vec_th1.size();
+  for(int i=0; i<size1; i++){
+    vec_th1[i]->Write();
   }
 
-  for(int i=0; i<2; i++){
-    for(int j=0; j<2; j++){
-      hppac_track[i][j]->Write();
-    }
+  int size2 = vec_th2.size();
+  for(int i=0; i<size2; i++){
+    vec_th2[i]->Write();
   }
-  for(int i=0; i<2; i++){
-    for(int j=0; j<2; j++){
-      hppac_track_pid[i][j]->Write();
-    }
-  }
-
-  h_attpc_x->Write();
-  h_attpc_y->Write();
-  h_attpc_xy->Write();    
   
-  hpid_f2->Write();
-  hpid_f3->Write();  
-
+  tree->Write();
   outroot->Close();
   return 0;
 }
