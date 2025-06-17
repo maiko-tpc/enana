@@ -123,11 +123,6 @@ void analysis::HistFill(){
 	hppac_track_pid[0][1]->Fill(z, y);      
       }
       
-      if( (z-0.5)<attpc_z && (z+0.5)>attpc_z ){
-	h_attpc_x->Fill(x);
-	h_attpc_y->Fill(y);
-	h_attpc_xy->Fill(x,y);		
-      }
     }
   }
 
@@ -142,6 +137,13 @@ void analysis::HistFill(){
 	hppac_track_pid[1][0]->Fill(z, x);
 	hppac_track_pid[1][1]->Fill(z, y);      
       }
+
+      if( (z-0.5)<attpc_z && (z+0.5)>attpc_z ){
+	h_attpc_x->Fill(x);
+	h_attpc_y->Fill(y);
+	h_attpc_xy->Fill(x,y);		
+      }
+
     }
   }
 
