@@ -26,13 +26,11 @@ void analysis::HistDef(){
 			      Form("%s PPAC 2D position", ppac_name[i]),
 			      500,-1000,1000, 500,-1000,1000);
     vec_th2.push_back(hppac_pos2d[i]);
-    hppac_pos2d[i]->SetDrawOption("colz");
 
     hppac_pos2d_cal[i] = new TH2F(Form("h_ppac%d_pos2d_cal", i),
 			      Form("%s PPAC 2D position mm", ppac_name[i]),
 			      250,-50,50, 250,-50,50);
     vec_th2.push_back(hppac_pos2d_cal[i]);
-    hppac_pos2d_cal[i]->SetDrawOption("colz");
   }
 
   hppac_track[0][0] = new TH2F("h_ppac_track0", "F2 PPAC track Z-X",
