@@ -111,15 +111,13 @@ int main(int argc, char *argv[]) {
   }
   
   /* output ROOT file */
-  string outfile_name = argv[2];
-  ana->MakeROOT(outfile_name);
+  ana->MakeROOT();
   ana->HistDef();
   ana->TreeDef();  
   if(ana->GetWeb()) ana->MakeTHttp(portnum);
   
   /* main analysis routine */
   ana->analyze();
-
   ana->CloseRIDF();
   ana->CloseROOT();
   

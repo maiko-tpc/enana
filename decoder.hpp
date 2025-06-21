@@ -5,7 +5,7 @@
 
 using namespace std;
 
-const int MAXSIZE=10000;
+const int MAXSIZE=100000;
 
 int ana_v1190(unsigned int size, unsigned int *tmpdata, evtdata *evt);
 

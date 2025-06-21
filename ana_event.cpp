@@ -195,8 +195,8 @@ void analysis::ana_ssd(){
   evt.ssd.adc[0] = evt.madc.adc[1];
   evt.ssd.adc[1] = evt.madc.adc[4];  
 
-  evt.ssd.ene[0] = 0.007017*evt.madc.adc[1] - 0.2002; // F2
-  evt.ssd.ene[1] = 0.0079*evt.madc.adc[4] - 0.1076; // F3 
+  evt.ssd.ene[0] = 0.0085221*evt.madc.adc[1] - 0.2563; // F2
+  evt.ssd.ene[1] = 0.0092344*evt.madc.adc[4] - 0.8454; // F3 
 
   int v1190_size = evt.v1190_hit_all.size();
   for(int i=0; i<v1190_size; i++){

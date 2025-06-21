@@ -153,6 +153,8 @@ void analysis::HistFill(){
 
 int analysis::CloseROOT(){
 
+  printf("closing root file...\n");
+  
   int size1 = vec_th1.size();
   for(int i=0; i<size1; i++){
     vec_th1[i]->Write();

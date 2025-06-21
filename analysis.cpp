@@ -76,6 +76,7 @@ int analysis::OpenRIDF(string fname){
 }
 
 void analysis::ClearRIDFError(){
+  printf("clear ridf file...\n");
   ridf.clear();
 }
 
@@ -83,6 +84,7 @@ bool analysis::IsRIDFeof(){
   return ridf.eof();
 }
 void analysis::CloseRIDF(){
+  printf("closing ridf...\n");
   ridf.close();
 }
 
@@ -106,13 +108,19 @@ void analysis::SetWeb(){
 int analysis::GetWeb(){
   return opt.web_flag;
 }
-int analysis::MakeROOT(string fname){
-  outroot = new TFile(fname.c_str(), "RECREATE");
+void analysis::SetROOTFile(char *fname){
+  sprintf(opt.rootfname, "%s", fname);
+}
+char* analysis::GetROOTFile(){
+  return opt.rootfname;
+}
+int analysis::MakeROOT(){
+  outroot = new TFile(GetROOTFile(), "RECREATE");
   return 0;
 }
 
 
-int analysis::analyze(){
+void analysis::analyze(){
   extern int STOP_FLAG;
   
   blk=0;
@@ -120,16 +128,19 @@ int analysis::analyze(){
   
   set_ana();
 
-  printf("set_ana\n");
+  unsigned int readcnt = 0;
   
   while(1){
     
     // Read the header
     ridf.read((char*)buf_header, sizeof(buf_header));
-    cid = (buf_header[0] & 0x0FC00000) >> 22;
+    //    cid = (buf_header[0] & 0x0FC00000) >> 22;
+    rev =   (buf_header[0]>>30) & 0x3;
+    layer = (buf_header[0]>>28) & 0x3;    
+    cid = (buf_header[0]>>22) & 0x3f;    
     blksize= buf_header[0] & 0x003FFFFF;
     address = buf_header[1];
-    //    printf("cid:%d, size:%d\n", cid, blksize);
+    //    printf("1. rev:%d, ly:%d, cid:%d, size:%d\n", rev, layer, cid, blksize);
     
     switch(cid){
     case RIDF_EF_BLOCK:  //Event Fragment
@@ -154,6 +165,31 @@ int analysis::analyze(){
       blk = tmpbuf;
       break;
       
+    case RIDF_NCSCALER:
+      //      printf("sca\n");
+      readcnt=4;
+      while(readcnt<blksize){
+	ridf.read((char*)&tmpbuf, sizeof(tmpbuf));      	
+	readcnt+=2;
+      }
+      break;
+    case RIDF_CSCALER:
+      //      printf("csca\n");
+      readcnt=4;
+      while(readcnt<blksize){
+	ridf.read((char*)&tmpbuf, sizeof(tmpbuf));      	
+	readcnt+=2;
+      }
+      break;
+    case RIDF_NCSCALER32:
+      //      printf("sca32\n");
+      readcnt=4;
+      while(readcnt<blksize){
+	ridf.read((char*)&tmpbuf, sizeof(tmpbuf));      	
+	readcnt+=2;
+      }
+      break;
+
     case RIDF_EVENT: // event data header
       init_event();
       dec_event(blksize);
@@ -194,7 +230,9 @@ int analysis::analyze(){
   } // end of while
   
   printf("eve: %d\n", eve);  
-  return 0;
+  printf("end of ana\n");
+
+  //  return 0;
 }
 
 int analysis::decode(){
@@ -258,10 +296,13 @@ int analysis::dec_event(unsigned int evesize){
     // Read the header
     ridf.read((char*)buf_header, sizeof(buf_header));
     wrdcnt+=(sizeof(buf_header))*2;
-    cid = (buf_header[0] & 0x0FC00000) >> 22;
+
+    rev =   (buf_header[0]>>30) & 0x3;
+    layer = (buf_header[0]>>28) & 0x3;    
+    cid = (buf_header[0]>>22) & 0x3f;    
     blksize= buf_header[0] & 0x003FFFFF;
     address = buf_header[1];
-    //    printf("cid:%d, size:%d\n", cid, blksize);
+    //    printf("2. eve:%d, rev:%d, ly:%d, cid:%d, size:%d\n", eve, rev, layer, cid, blksize);
 
     switch(cid){
     case RIDF_SEGMENT:

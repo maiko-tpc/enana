@@ -74,7 +74,7 @@ int ana_v1190(unsigned int size, unsigned int *tmpdata, evtdata *evt){
 
     if(data>>27 == 0x10) break; // global trailer
 
-    if(wrdcnt>size) break;
+    if(wrdcnt>=size) break;
 
   } // end of while(1)
 
@@ -139,11 +139,15 @@ int ana_mxdc32(vector<mxdc32_hit> &mxdc32_hit_all, unsigned int size,
 
   int no_header=1;
   int no_ender=1;  
+
+  unsigned int word_cnt = 6;
   
+
   while(1){
     data = tmpdata[rp];
     rp++;
-
+    word_cnt +=2;
+    
     if((data>>24) == 0x40){  // header
       geo=(data>>16)&0x00ff;
       nword=(data)&0x00000fff;
@@ -182,6 +186,8 @@ int ana_mxdc32(vector<mxdc32_hit> &mxdc32_hit_all, unsigned int size,
       
       break;
     }
+    
+    if(word_cnt >= size) break;
   }
   
   if(no_header==1) printf("MADC32 no header\n");

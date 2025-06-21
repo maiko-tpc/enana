@@ -61,12 +61,14 @@ public:
   int  GetWeb();  
 
   void CloseRIDF();
-  int analyze();
+  void analyze();
   int decode();    
   int show_comment(unsigned int comsize);
   int dec_event(unsigned int evesize);
   int dec_segment(unsigned int segsize);
-  int MakeROOT(string fname);
+  void SetROOTFile(char *fname);
+  char* GetROOTFile();
+  int MakeROOT();
   int CloseROOT();
 
   // defined in histdef.cpp
@@ -95,7 +97,7 @@ private:
   
   // RIDF data
   unsigned int buf_header[2];
-  unsigned int cid, blksize, address;
+  unsigned int rev, layer, cid, blksize, address;
   unsigned int blk, eve;
 
   // output ROOT file
