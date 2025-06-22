@@ -70,7 +70,7 @@ int analysis::OpenRIDF(string fname){
     printf("RIDF File '%s' does not exist!\n", fname.c_str());
     return 1;
   }
-  printf("Input RIDF: %s\n", fname.c_str());
+  printf("Input  RIDF: %s\n", fname.c_str());
   
   return 0;
 }
@@ -116,6 +116,7 @@ char* analysis::GetROOTFile(){
 }
 int analysis::MakeROOT(){
   outroot = new TFile(GetROOTFile(), "RECREATE");
+  printf("Output root: %s\n", GetROOTFile());
   return 0;
 }
 
