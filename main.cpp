@@ -72,6 +72,11 @@ int main(int argc, char *argv[]) {
       ana->UnsetUseage();
     }
 
+   // output file
+    if(strstr(argv[i], ".root") != NULL){
+      ana->SetROOTFile(argv[i]);
+    }
+    
     // online flag
     if(strstr(argv[i], "-online") != NULL){
       ana->SetOnline();
