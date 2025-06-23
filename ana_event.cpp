@@ -7,6 +7,9 @@ void analysis::ana_event(){
   // MADC analysis
   ana_madc32();
 
+  // MDPP analysis
+  ana_mdpp16();
+
   // PPAC ana
   for(int i=0; i<N_PPAC; i++){
     ppac[i].analyze(&evt);
@@ -57,7 +60,8 @@ void analysis::ana_event(){
 
 void analysis::init_event(){
   evt.v1190_hit_all.clear();
-  evt.mxdc32_hit_all.clear();  
+  evt.mxdc32_hit_all.clear();
+  evt.mdpp16_hit_all.clear();    
 
   for(int i=0; i<N_PPAC; i++){
     evt.ppac_good[i]=0;
@@ -100,6 +104,29 @@ int analysis::ana_madc32(){
 
     evt.madc.adc[tmp_ch] = tmp_adc;
     evt.madc.counter[0] = tmp_counter;    
+  }
+
+  return 0;
+}
+
+int analysis::ana_mdpp16(){
+  int mdpp16_size = evt.mdpp16_hit_all.size();
+  unsigned int tmp_ch=0;
+  unsigned int tmp_adc=0;
+  unsigned int tmp_tdc=0;  
+  for(int i=0; i<mdpp16_size; i++){
+    tmp_ch  = evt.mdpp16_hit_all[i].ch;
+
+    if(tmp_ch<16){
+      tmp_adc = (unsigned int)evt.mdpp16_hit_all[i].adc;
+      evt.madc.adc[tmp_ch] = tmp_adc;
+    }
+    if(tmp_ch>=16 && tmp_ch<32){
+      tmp_tdc = (unsigned int)evt.mdpp16_hit_all[i].adc;
+      evt.madc.adc[tmp_ch-16] = tmp_tdc;
+    }
+
+    if(tmp_ch==34)evt.madc.counter[0] = evt.mdpp16_hit_all[i].adc;
   }
 
   return 0;

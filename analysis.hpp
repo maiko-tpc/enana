@@ -36,6 +36,7 @@ using namespace std;
 const int seg_v792 = 21;
 const int seg_v1190 = 24;
 const int seg_madc32 = 32;
+const int seg_mdpp16 = 33;
 
 class analysis{
 public:
@@ -86,6 +87,7 @@ public:
   void ana_event();
   void init_event();
   int ana_madc32();
+  int ana_mdpp16();  
 
   void ana_ssd();
   void ana_rf();

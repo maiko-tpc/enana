@@ -5,6 +5,8 @@
 
 const int N_MADC = 1;
 const int N_MADC_CH = 32*N_MADC;
+const int N_MDPP = 1;
+const int N_MDPP_CH = 16*N_MDPP;
 
 const int N_PPAC = 4;
 const int N_PPAC_CH = 5;
@@ -42,11 +44,23 @@ typedef struct mxdc32_hit{
   unsigned long int adc;
 } mxdc32_hit;
 
+typedef struct mdpp32_hit{
+  int field;
+  unsigned int geo;
+  unsigned int ch;
+  unsigned long int adc;
+} mdpp16_hit;
+
 
 typedef struct madc32_data{
   unsigned int adc[N_MADC_CH];
   unsigned long int counter[N_MADC];
 } madc32_data;
+
+typedef struct mdpp16_data{
+  unsigned int adc[N_MDPP_CH];
+  unsigned long int counter[N_MDPP];
+} mdpp16_data;
 
 typedef struct ssd_data{
   int adc[N_SSD];
@@ -56,11 +70,13 @@ typedef struct ssd_data{
 
 struct evtdata{
   std::vector<v1190_hit> v1190_hit_all;
-  std::vector<mxdc32_hit> mxdc32_hit_all;  
+  std::vector<mxdc32_hit> mxdc32_hit_all;
+  std::vector<mdpp16_hit> mdpp16_hit_all;    
 
   int sleep_cnt;
   
   madc32_data madc;
+  mdpp16_data mdpp;  
 
   unsigned int eve;
 

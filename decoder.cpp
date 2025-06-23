@@ -173,11 +173,11 @@ int ana_mxdc32(vector<mxdc32_hit> &mxdc32_hit_all, unsigned int size,
       }
     }
 
-    if(((data>>30))==0x3){  // ender
+    if(((data>>30) &0x3)==0x3){  // ender
       tmp_counter |= (data&0x3fffffff);
       no_ender=0;
       
-      // counter = ch33
+      // counter = ch32
       tmp_hit.field = 0;
       tmp_hit.geo = geo;
       tmp_hit.ch = 32;
@@ -192,6 +192,77 @@ int ana_mxdc32(vector<mxdc32_hit> &mxdc32_hit_all, unsigned int size,
   
   if(no_header==1) printf("MADC32 no header\n");
   if(no_ender==1)  printf("MADC32 no ender:\n");  
+
+  return 0;
+}
+
+int dec_mdpp16(vector<mdpp16_hit> &mdpp16_hit_all, unsigned int size,
+	     unsigned int *tmpdata){
+
+  unsigned int rp=0;
+  unsigned int data;
+  int geo=0;
+  int nword;
+  int ich;
+  unsigned int tmpadc;
+  unsigned long int tmp_counter=0;
+  mdpp16_hit tmp_hit;
+
+  int no_header=1;
+  int no_ender=1;  
+
+  unsigned int word_cnt = 6;
+  
+
+  while(1){
+    data = tmpdata[rp];
+    rp++;
+    word_cnt +=2;
+    
+    if((data>>24) == 0x40){  // header
+      geo=(data>>16)&0x00ff;
+      nword=(data)&0x3ff;
+      no_header=0;
+      
+      for(int i=0; i<nword-1; i++){
+	data = tmpdata[rp];
+	rp++;
+
+	if(((data>>21) & 0x7ff) ==0x20){ // ADC/TDC data words
+          ich = (data>>16)&0x3f;
+          tmpadc=(data)&0xffff;
+          tmp_hit.field = 0;
+          tmp_hit.geo = geo;
+          tmp_hit.ch = ich;
+          tmp_hit.adc = tmpadc;
+          mdpp16_hit_all.push_back(tmp_hit);
+        }	
+
+	if(((data>>28) & 0xf) ==0x2){ // extended time stamp
+	  tmp_counter |= (data&0xffff)<<30;
+	}
+      }
+    }
+
+    if( ((data>>30) & 0x3)==0x3){  // ender
+      tmp_counter |= (data&0x3fffffff);
+      no_ender=0;
+      
+      // counter = ch34
+      tmp_hit.field = 0;
+      tmp_hit.geo = geo;
+      tmp_hit.ch = 34;
+      tmp_hit.adc = tmp_counter;
+      mdpp16_hit_all.push_back(tmp_hit);
+      
+      break;
+    }
+    
+    if(word_cnt >= size) break;
+  }
+  
+  if(no_header==1) printf("MDPP16 no header\n");
+  if(no_ender==1)  printf("MDPP16 no ender:\n");  
 
   return 0;
 }

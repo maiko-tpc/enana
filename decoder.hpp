@@ -12,4 +12,7 @@ int ana_v1190(unsigned int size, unsigned int *tmpdata, evtdata *evt);
 int ana_mxdc32(vector<mxdc32_hit> &mxdc32_hit_all, unsigned int size,
 	     unsigned int *tmpdata);
 
+int dec_mdpp16(vector<mdpp16_hit> &mdpp16_hit_all, unsigned int size,
+	     unsigned int *tmpdata);
+
 #endif

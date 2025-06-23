@@ -9,6 +9,10 @@ void analysis::TreeDef(){
   tree->Branch("madc", &evt.madc,
 	       Form("adc[%d]/i:counter[%d]/l",
                     N_MADC_CH, N_MADC));
+
+  tree->Branch("mdpp", &evt.mdpp,
+	       Form("adc[%d]/i:tdc[%d]/i:counter[%d]/l",
+                    N_MDPP_CH, N_MDPP_CH, N_MDPP));
   
   tree->Branch("ppac_good", evt.ppac_good, "ppac_good[4]/O");
   

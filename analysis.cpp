@@ -369,6 +369,10 @@ int analysis::dec_segment(unsigned int segsize){
     ana_mxdc32(evt.mxdc32_hit_all, segsize, tmpdata);
     break;
 
+  case seg_mdpp16:
+    dec_mdpp16(evt.mdpp16_hit_all, segsize, tmpdata);
+    break;
+    
   case seg_v792:
     break;
 
