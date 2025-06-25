@@ -10,6 +10,8 @@ void analysis::TreeDef(){
 	       Form("adc[%d]/i:counter[%d]/l",
                     N_MADC_CH, N_MADC));
 
+  tree->Branch("counter_prev", &evt.counter_prev, "counter_prev/l");
+  
   tree->Branch("mdpp", &evt.mdpp,
 	       Form("adc[%d]/i:tdc[%d]/i:counter[%d]/l",
                     N_MDPP_CH, N_MDPP_CH, N_MDPP));

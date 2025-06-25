@@ -76,6 +76,8 @@ struct evtdata{
   int sleep_cnt;
   
   madc32_data madc;
+  unsigned long int counter_prev;
+
   mdpp16_data mdpp;  
 
   unsigned int eve;

@@ -63,6 +63,8 @@ void analysis::init_event(){
   evt.mxdc32_hit_all.clear();
   evt.mdpp16_hit_all.clear();    
 
+  evt.counter_prev = evt.madc.counter[0];
+  
   for(int i=0; i<N_PPAC; i++){
     evt.ppac_good[i]=0;
 
