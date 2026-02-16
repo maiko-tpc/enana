@@ -4,9 +4,9 @@ Program to convert the EN daq file to ROOT file
 ## Description
 
 ## Requirement
-[ROOT](https://root.cern.ch/) is required.
+[ROOT](https://root.cern.ch/) is required. <br>
 You need to install RIBF DAQ software "babirl".
-It can be downloaded from https://ribf.riken.jp/RIBFDAQ/index.php?DAQ%2FDownload#fe96a553
+It can be downloaded from https://ribf.riken.jp/RIBFDAQ/index.php?DAQ%2FDownload#fe96a553 <br>
 After compile babirl, modify Makefile
 ~~~
 LDFLAGS = -L/home/furuno/opt/babirl/babirl250503/lib
