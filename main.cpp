@@ -99,6 +99,13 @@ int main(int argc, char *argv[]) {
       ana->SetOnline();
     }
 
+    // Read Sheard Memory && THttp flag
+    if(strstr(argv[i], "-babian") != NULL){
+      portnum=atoi(argv[i+1]);
+      ana->SetWeb();
+      ana->SetBabianSharedMemory();
+    }
+
   } // end of option analysis
 
   /* Usage */
@@ -108,11 +115,15 @@ int main(int argc, char *argv[]) {
     printf("\n");
     exit(1);
   }
-
   
-  /* input RIDF file */
-  if(ana->OpenRIDF(infile_name) == 1){
-    exit(1);
+  /* open RIDF file or shared memory */
+  if (ana->GetBabianSharedMemory() == 1){
+    /* Online mode read shared memory */
+    printf("Online analysis mode Read babian shared memory.\n");
+    ana->GetSharedMemory();
+  }else{
+    /* input RIDF file */
+    if (ana->OpenRIDF(infile_name)!=0) exit(1);
   }
   
   /* output ROOT file */
@@ -121,10 +132,18 @@ int main(int argc, char *argv[]) {
   ana->TreeDef();  
   if(ana->GetWeb()) ana->MakeTHttp(portnum);
   
+  
   /* main analysis routine */
-  ana->analyze();
-  ana->CloseRIDF();
+  if (ana->GetBabianSharedMemory() == 1){
+    /* Online analysis mode -Babian Shared Memory- */
+    ana->analyze_online();
+  }else{
+    /* Offline analysis mode */
+    ana->analyze();
+    ana->CloseRIDF();
+  }
   ana->CloseROOT();
+  
   
   return 0;
 }

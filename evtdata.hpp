@@ -20,6 +20,7 @@ struct optdata{
   char bldfname[256];
   char rootfname[256];
   int online_flag;
+  int babian_flag;
   int last_flag;
   int refresh_flag;
   int web_flag;
@@ -82,11 +83,16 @@ struct evtdata{
 
   unsigned int eve;
 
+  int tdc_hit[128];
+  int tdc_multi[128];
+  int tdc_lead[128];    
+  
   bool ppac_good[N_PPAC];
   int ppac_tdc[N_PPAC][N_PPAC_CH];
   int ppac_pos_raw[N_PPAC][2];  
   float ppac_pos_cal[N_PPAC][2];
   float ppac_ang[2][2];
+  float f2_pos[2];
   
   double ssd_ene[2];
 
@@ -100,7 +106,8 @@ struct evtdata{
   bool use_pid_f2;
   bool use_pid_f3;
   bool is_pid_f2;
-  bool is_pid_f3;  
+  bool is_pid_f3;
+  
 };
 
 

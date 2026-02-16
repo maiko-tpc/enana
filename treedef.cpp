@@ -10,6 +10,10 @@ void analysis::TreeDef(){
 	       Form("adc[%d]/i:counter[%d]/l",
                     N_MADC_CH, N_MADC));
 
+  tree->Branch("tdc_hit", evt.tdc_hit, "tdc_hit[128]/I");
+  tree->Branch("tdc_multi", evt.tdc_multi, "tdc_multi[128]/I");
+  tree->Branch("tdc_lead", evt.tdc_lead, "tdc_lead[128]/I");    
+
   tree->Branch("counter_prev", &evt.counter_prev, "counter_prev/l");
   
   tree->Branch("mdpp", &evt.mdpp,
@@ -26,6 +30,8 @@ void analysis::TreeDef(){
 
   tree->Branch("ppac_ang", evt.ppac_ang,
 	       "ppac_ang[2][2]/F");
+
+  tree->Branch("f2_pos", evt.f2_pos, "ppac_pos[2]/F");
   
   tree->Branch("ssd", &evt.ssd,
 	       Form("adc[%d]/I:ene[%d]/F:tdc[%d]/I",

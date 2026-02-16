@@ -1,5 +1,6 @@
 #include "analysis.hpp"
 #include "ana_event.hpp"
+// #define ONLINE_DEBUG
 
 analysis::analysis(){
   evt.eve=0;
@@ -7,6 +8,7 @@ analysis::analysis(){
   
   sprintf(opt.rootfname, "out.root");
   opt.online_flag=0;
+  opt.babian_flag=0;
   opt.last_flag=0;
   opt.refresh_flag=0;
   opt.web_flag=0;
@@ -96,6 +98,13 @@ int analysis::GetOnline(){
   return opt.online_flag;
 }
 
+void analysis::SetBabianSharedMemory(){
+  opt.babian_flag=1;
+}
+int analysis::GetBabianSharedMemory(){
+  return opt.babian_flag;
+}
+
 void analysis::SetLast(){
   opt.last_flag=1;
 }
@@ -115,9 +124,15 @@ char* analysis::GetROOTFile(){
   return opt.rootfname;
 }
 int analysis::MakeROOT(){
-  outroot = new TFile(GetROOTFile(), "RECREATE");
-  printf("Output root: %s\n", GetROOTFile());
-  return 0;
+  if (opt.babian_flag==1){
+    outroot = new TFile("root/online.root", "RECREATE");
+    printf("Output root: root/online.root\n");
+    return 0;
+  }else{
+    outroot = new TFile(GetROOTFile(), "RECREATE");
+    printf("Output root: %s\n", GetROOTFile());
+    return 0;
+  }
 }
 
 
@@ -236,6 +251,192 @@ void analysis::analyze(){
   //  return 0;
 }
 
+int analysis::GetSharedMemory(){
+  /** Open data stream **************/
+  blk = 0;
+  /* Shared Memory */
+  if(!(shmid = initshm(ANSHMKEY,
+    EB_EFBLOCK_BUFFSIZE * WORDSIZE + sizeof(blk),
+    &shmp))){
+      printf("Can't create shared memory\n");
+      return 1;
+    }
+    fshmp = shmp + EB_EFBLOCK_BUFFSIZE * WORDSIZE;
+    
+    /* Semaphore */
+    if(!(semid = initsem(ANSEMKEY, &semunion))){
+      printf("Can't create semaphore\n");
+      return 1;
+    }
+    
+  return 0;
+}
+
+unsigned int analysis::ri(unsigned short *lbuf, unsigned int *lrp){
+  unsigned int idat;
+  idat=*(int *)(lbuf+*lrp);
+  *lrp+=2;
+  return(idat);
+}
+
+void analysis::analyze_online(){
+  extern int STOP_FLAG;
+  
+  RIDFHD hd;
+  unsigned short *buf;
+  buf=(unsigned short *)malloc(EB_EFBLOCK_BUFFSIZE * WORDSIZE + sizeof(blocknum)); // blo
+  unsigned int tmpbuf;
+  set_ana();
+  
+  unsigned int readcnt = 0;
+  unsigned int rp;     /* Read pointer */
+  while(1){
+    /* if online option is given */
+    sem_p(semid, &semb);     // Lock shared memory
+    memcpy((char *)&tblocknum, fshmp, sizeof(blocknum));
+    if(blocknum != tblocknum){
+      blocknum = tblocknum;
+      memcpy((char *)&hd, shmp, sizeof(hd));
+    }
+    else{
+      sleep(1);
+      sem_v(semid, &semb);     // Unlock shared memory
+      continue;
+    }
+    
+    rhdl[0] = ridf_dechd(hd);
+    layer = rhdl[0].layer;
+    cid = rhdl[0].classid; 
+    global_blksize = rhdl[0].blksize;
+    #ifdef ONLINE_DEBUG
+    cout << "---------------------------------------------" << endl;
+    cout << "Global block header >> " << endl;
+    cout << "   layer: " << layer << "  Class ID: " << cid << "  blksize: " << global_blksize << endl;
+    #endif
+    
+
+    memcpy((char *)buf,shmp,(rhdl[0].blksize)*2);
+    sem_v(semid, &semb);     // Unlock shared memory
+    rp=HEADER_SIZE;
+
+ 
+    
+    /*****************************/
+    while(rp<global_blksize){
+      
+      memcpy((char *)&hd,(char *)(buf+rp),sizeof(hd));
+      rp+=HEADER_SIZE;
+      
+      rhdl[1]=ridf_dechd(hd);
+      layer = rhdl[1].layer;
+      cid = rhdl[1].classid; 
+      blksize = rhdl[1].blksize;
+      #ifdef ONLINE_DEBUG
+      cout << "block header >> " << endl;
+      cout << "  layer: " << layer << "  Class ID: " << cid << "  blksize: " << blksize << endl;
+      #endif
+
+      
+
+    switch(cid){
+    case RIDF_EF_BLOCK:  //Event Fragment
+      break;
+      
+    case RIDF_EA_BLOCK:       // Event Assembly
+      break;
+      
+    case RIDF_EAEF_BLOCK: // Event Assembly Fragment
+      break;
+      
+    case RIDF_COMMENT:
+      rp += blksize - HEADER_SIZE; // skip ridf comment
+      // show_comment(blksize);
+      break;
+      
+    case RIDF_END_BLOCK:       // end of block
+      tmpbuf = ri(buf, &rp);
+#ifdef ONLINE_DEBUG
+      cout << ">> RIDF_END_NUMBER" << endl;
+      cout << "   Number of this block: " << blk <<  endl;
+#endif
+      break;
+      
+    case RIDF_BLOCK_NUMBER: // Counter of the number of block
+      tmpbuf = ri(buf, &rp);
+      blk = tmpbuf;
+#ifdef ONLINE_DEBUG
+      cout << ">> RIDF_BLOCK_NUMBER" << endl;
+      cout << "   Number of block: " << blk <<  endl;
+#endif
+      break;
+      
+      
+    case RIDF_NCSCALER:
+      //      printf("sca\n");
+      rp += blksize - HEADER_SIZE; // skip cscaler
+      while(readcnt<blksize){
+        tmpbuf = ri(buf, &rp);
+        readcnt+=2;
+      }
+      break;
+      
+    case RIDF_CSCALER:
+      //      printf("csca\n");
+      rp += blksize - HEADER_SIZE; // skip cscaler
+      while(readcnt<blksize){
+        tmpbuf = ri(buf, &rp);
+      }
+      break;
+      
+    case RIDF_NCSCALER32:
+      //      printf("sca32\n");
+      rp += blksize - HEADER_SIZE; // skip ncscaler32
+      while(readcnt<blksize){
+        // tmpbuf = ri(buf, &rp);
+      }
+      break;
+      
+    case RIDF_EVENT: // event data header
+#ifdef ONLINE_DEBUG
+      cout << ">> RIDF_EVENT" << endl;
+#endif
+      init_event();
+      rp += dec_event_online(buf + rp, blksize);
+      ana_event();
+      tree->Fill();
+      HistFill();
+      break;
+      
+      case RIDF_SEGMENT: // segment data
+      break;
+      
+      default:
+      // printf("Error: RIDF Class ID:%d is invalid.\n",cid);
+      break;
+      if(STOP_FLAG==1){
+	printf("bye-bye!\n");
+	break;
+      }
+    
+    }
+    }
+    // IMPORTANT: one should regularly call ProcessEvents
+    // to let http server process requests
+    if(gSystem->ProcessEvents()) break;
+    
+    if(STOP_FLAG==1){
+      printf("bye-bye!\n");
+      break;
+    }
+  } // end of while
+  
+  printf("eve: %d\n", eve);  
+  printf("end of ana\n");
+  
+  
+}
+
+
 int analysis::decode(){
   return 0;
 }
@@ -323,8 +524,8 @@ int analysis::dec_event(unsigned int evesize){
 
       // skip this event
       while(wrdcnt<evesize){
-	ridf.read((char*)buf_header, sizeof(buf_header));
-	wrdcnt+=(sizeof(buf_header))*2;
+        ridf.read((char*)buf_header, sizeof(buf_header));
+        wrdcnt+=(sizeof(buf_header))*2;
       }
       break;
 
@@ -386,4 +587,100 @@ int analysis::dec_segment(unsigned int segsize){
   } // end of switch(id.mod)
   
   return wrdcnt;
+}
+
+int analysis::dec_segment_online(unsigned int segsize, unsigned short *buf){
+    unsigned int rps = 0;
+    unsigned int segid;
+    unsigned int tmpdata[MAXSIZE];
+
+
+    segid = ri(buf, &rps);
+
+    segmentID id;
+    id.rev = (segid >> 26) & 0x3F;
+    id.dev = (segid >> 20) & 0x3F;
+    id.fp  = (segid >> 14) & 0x3F;
+    id.det = (segid >>  8) & 0x3F;
+    id.mod = segid & 0xFF;
+    
+
+    for(unsigned int i=0; rps < segsize; i++){
+        tmpdata[i] = ri(buf, &rps);
+    }
+
+
+    switch(id.mod){
+        case seg_v1190:
+            ana_v1190(segsize, tmpdata, &evt);
+            break;
+
+        case seg_madc32:
+            ana_mxdc32(evt.mxdc32_hit_all, segsize, tmpdata);
+            break;
+
+        case seg_mdpp16:
+            dec_mdpp16(evt.mdpp16_hit_all, segsize, tmpdata);
+            break;
+
+        default:
+            printf("Warning: Unknown Module ID: %d\n", id.mod);
+            break;
+    }
+
+    return rps;
+}
+
+int analysis::dec_event_online(unsigned short *buf, unsigned int evesize){
+  unsigned int rpi = 0;      
+
+    eve = ri(buf, &rpi);
+
+    printf(" Analyze: %d\r", eve);
+    fflush(stdout);
+
+    #ifdef ONLINE_DEBUG
+    cout << " Event Number: " << eve << endl;
+    cout << "evesize: " << evesize << endl;
+    #endif
+    
+    // while(rpi < evesize * 2){
+    while(rpi < evesize - HEADER_SIZE){ 
+        
+      for(int i=0; i<2; i++) buf_header[i] = ri(buf, &rpi); // Read 4 words
+
+        rev     = (buf_header[0] >> 30) & 0x3;
+        layer   = (buf_header[0] >> 28) & 0x3;    
+        cid     = (buf_header[0] >> 22) & 0x3f;    
+        blksize = buf_header[0] & 0x003FFFFF;
+        address = buf_header[1];
+
+#ifdef ONLINE_DEBUG
+	cout << "Segment data >> " << endl;
+	cout << "  layer: " << layer << "  Class ID: " << cid << "  blksize: " << blksize << endl;
+	cout << "  rpi  : " << rpi << endl;
+#endif
+	
+        switch(cid){
+            case RIDF_SEGMENT:
+	      rpi += dec_segment_online( blksize - HEADER_SIZE  , buf + rpi);
+#ifdef ONLINE_DEBUG
+	      cout << "  rpi  : " << rpi << endl;
+#endif
+	      break;
+
+            case RIDF_NCSCALER:
+            case RIDF_CSCALER:
+            case RIDF_NCSCALER32:
+                rpi += blksize - HEADER_SIZE;
+                break;
+
+            default:
+                printf("Warning: Unknown class ID: %d\n", cid);
+                rpi += blksize - HEADER_SIZE;
+                break;
+        }
+    }
+    
+    return rpi;
 }

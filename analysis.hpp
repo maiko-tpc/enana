@@ -31,6 +31,17 @@
 #include "evtdata.hpp"
 #include "ana_event.hpp"
 
+/* babirl */
+extern "C"{
+#include <bi-config.h>
+#include <bi-common.h>
+#include <ridf.h>
+}
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+
 using namespace std;
 
 const int seg_v792 = 21;
@@ -87,11 +98,22 @@ public:
   void ana_event();
   void init_event();
   int ana_madc32();
-  int ana_mdpp16();  
+  int ana_mdpp16();
+  int cnt_v1190();
 
   void ana_ssd();
   void ana_rf();
-  void ana_pl();    
+  void ana_pl();
+  
+  // online mode read shared memory
+  void SetBabianSharedMemory();
+  int GetBabianSharedMemory();
+  int GetSharedMemory();
+  unsigned int ri(unsigned short *lbuf, unsigned int *lrp);
+  void analyze_online();
+  int dec_event_online(unsigned short *buf, unsigned int evesize);
+  int dec_segment_online(unsigned int segsize, unsigned short *buf);
+
 private:
   int pid;
 
@@ -101,7 +123,18 @@ private:
   unsigned int buf_header[2];
   unsigned int rev, layer, cid, blksize, address;
   unsigned int blk, eve;
-
+  
+  // shared memory
+  struct sembuf semb;
+  union semun semunion;
+  char *shmp, *fshmp;
+  unsigned int blocknum, tblocknum;
+  int shmid, semid;
+  unsigned short sval;
+  unsigned int global_blksize;
+  RIDFRHD rhdl[3]; /* RIDFRHD for Layer 0, 1, 2 */
+  static const unsigned int HEADER_SIZE = 4;
+  
   // output ROOT file
   TFile *outroot;
   
@@ -115,14 +148,16 @@ private:
 
   // output histograms
   TH1F *hmadc[N_MADC_CH];
-
+  TH1F *hmadc_total;
   TH1F *hppac_good[N_PPAC];
   TH2F *hppac_pos2d[N_PPAC];
   TH2F *hppac_pos2d_cal[N_PPAC];  
 
   TH2F *hppac_track[2][2]; // [F2/F3][X/Y]
   TH2F *hppac_track_pid[2][2]; // [F2/F3][X/Y]  
-
+  
+  TH1F *h_f2_pos[2]; // F2 viewer position
+  
   TH1F *h_attpc_x;
   TH1F *h_attpc_y;  
   TH2F *h_attpc_xy;
@@ -131,6 +166,8 @@ private:
 
   TH2F *hpid_f2;
   TH2F *hpid_f3;  
+
+  TH1F *h_tof_f3ppac[4];
   
   // list of histograms
   vector<TH1F*> vec_th1;
@@ -171,6 +208,7 @@ private:
     unsigned int det;
     unsigned int mod;    
   } segmentID;
+
 
   evtdata evt;
   optdata opt;

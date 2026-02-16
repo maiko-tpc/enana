@@ -4,7 +4,11 @@ bool bResetHist = FALSE;
 
 void analysis::MakeTHttp(int portnum){
   serv = new THttpServer(Form("http:%d?thrds=2;rw", portnum));
-
+  /* auto refresh every 1 sec */
+  serv->SetItemField("/", "_update", "1000");
+  serv->SetItemField("/", "_updateperiod", "1000");
+  serv->SetItemField("/", "_scan", "5000");
+  
   /* Clear button definition */
   string clearcmd = Form("gSystem->Exec(\"kill -%d %d\");", SIGUSR2, pid);
   serv->RegisterCommand("/Commands/Clear", clearcmd.c_str(),
@@ -13,7 +17,8 @@ void analysis::MakeTHttp(int portnum){
   for(int i=0; i<N_MADC_CH; i++){
     serv->Register("/MADC", hmadc[i]);
   }
-
+  serv->Register("/MADC", hmadc_total);
+  
   for(int i=0; i<4; i++){
     serv->Register("/PPAC", hppac_good[i]);
   }
@@ -35,6 +40,9 @@ void analysis::MakeTHttp(int portnum){
     }
   }
 
+  serv->Register("/PPAC", h_f2_pos[0]);
+  serv->Register("/PPAC", h_f2_pos[1]);  
+
   serv->Register("/PPAC", h_attpc_x);
   serv->Register("/PPAC", h_attpc_y);
   serv->Register("/PPAC", h_attpc_xy);    
@@ -46,6 +54,10 @@ void analysis::MakeTHttp(int portnum){
   serv->Register("/PID", hpid_f2);
   serv->Register("/PID", hpid_f3);  
 
+  for(int i=0; i<4; i++){
+    serv->Register("/PID", h_tof_f3ppac[i]);
+  }
+  
 } // end of MakeHttp()
 
 void analysis::HttpHistReset(){

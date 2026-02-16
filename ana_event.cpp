@@ -7,6 +7,9 @@ void analysis::ana_event(){
   // MADC analysis
   ana_madc32();
 
+  // V1190 analysis
+  cnt_v1190();
+
   // MDPP analysis
   ana_mdpp16();
 
@@ -34,6 +37,13 @@ void analysis::ana_event(){
     evt.ppac_ang[1][i] = (ppac[3].pos_cal[i] - ppac[2].pos_cal[i])/500.0; //F3   
   }
 
+  // calculate F2 viewer position
+  if(evt.ppac_good[0]==1 && evt.ppac_good[1]==1){
+    evt.f2_pos[0] = ppac[1].pos_cal[0] + 1000*evt.ppac_ang[0][0];
+    evt.f2_pos[1] = ppac[1].pos_cal[1] + 1000*evt.ppac_ang[0][1];    
+  }
+
+  
   // SSD ana
   ana_ssd();
   ana_rf();
@@ -44,7 +54,14 @@ void analysis::ana_event(){
     evt.is_pid_f2 = pid_f2->IsInside(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[0]);
   }
   if(evt.use_pid_f3){
-    evt.is_pid_f3 = pid_f3->IsInside(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[1]);
+    //    evt.is_pid_f3 = pid_f3->IsInside(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[1]);
+    // edited by H. Shimojo for 11Be exp. 2025/12/24
+    double _tof = evt.rf[3] - evt.ref_tdc;
+    bool pid_bunch1 = (4300<_tof) && (_tof<4400);
+    bool pid_bunch2 = (4760<_tof) && (_tof<4860);
+    bool pid_bunch3 = (5210<_tof) && (_tof<5320);
+    bool pid_bunch4 = (5680<_tof) && (_tof<5780);
+    if(pid_bunch1 || pid_bunch2 || pid_bunch3 || pid_bunch4) evt.is_pid_f3=1;
   }
 
   // http control
@@ -79,10 +96,19 @@ void analysis::init_event(){
     }
   }
   
+  evt.f2_pos[0]=-200;
+  evt.f2_pos[1]=-200;  
+
   for(int i=0; i<N_SSD; i++){
     evt.ssd.adc[i] = 0;
     evt.ssd.ene[i] = -1;
     evt.ssd.tdc[i] = -1000;
+  }
+
+  for(int i=0; i<128; i++){
+    evt.tdc_hit[i]=0;
+    evt.tdc_multi[i]=0;
+    evt.tdc_lead[i]=-1000;        
   }
 
   evt.ref_tdc = 0;
@@ -108,6 +134,20 @@ int analysis::ana_madc32(){
     evt.madc.counter[0] = tmp_counter;    
   }
 
+  return 0;
+}
+
+int analysis::cnt_v1190(){
+  int ch;
+  int v1190_size = evt.v1190_hit_all.size();
+  for(int i=0; i<v1190_size; i++){
+    ch = evt.v1190_hit_all[i].ch;
+    evt.tdc_hit[ch] = 1;
+    evt.tdc_multi[ch]++;
+    if(evt.tdc_multi[ch]==1){
+      evt.tdc_lead[ch] = evt.v1190_hit_all[ch].lead_cor;
+    }
+  }
   return 0;
 }
 
@@ -199,8 +239,8 @@ int ana_ppac::analyze(evtdata *evt){
     pos_raw[1] = tdc_val[1] - tdc_val[3];
     pos_cal[1] = cal_par_p0[ippac][1] + pos_raw[1]*cal_par_p1[ippac][1];
     pos_cal[1]+= offset[ippac][1];
-  }  
-  
+  } 
+
   return 0;
 }
 
@@ -224,7 +264,7 @@ void analysis::ana_ssd(){
   evt.ssd.adc[0] = evt.madc.adc[1];
   evt.ssd.adc[1] = evt.madc.adc[4];  
 
-  evt.ssd.ene[0] = 0.0085221*evt.madc.adc[1] - 0.2563; // F2
+  evt.ssd.ene[0] = (0.0085221*evt.madc.adc[1] - 0.2563)*2.7; // F2
   evt.ssd.ene[1] = 0.0092344*evt.madc.adc[4] - 0.8454; // F3 
 
   int v1190_size = evt.v1190_hit_all.size();
@@ -243,7 +283,10 @@ void analysis::ana_rf(){
 
   int v1190_size = evt.v1190_hit_all.size();
   for(int i=0; i<v1190_size; i++){
-    if(evt.v1190_hit_all[i].ch == 31) evt.ref_tdc = evt.v1190_hit_all[i].lead_raw;
+    //    if(evt.v1190_hit_all[i].ch == 31) evt.ref_tdc = evt.v1190_hit_all[i].lead_raw;
+    //    if(evt.v1190_hit_all[i].ch == 10) evt.ref_tdc = evt.v1190_hit_all[i].lead_raw;  //PL
+    //    if(evt.v1190_hit_all[i].ch == 4) evt.ref_tdc = evt.v1190_hit_all[i].lead_raw;  //F2PPACU-A
+    if(evt.v1190_hit_all[i].ch == 20) evt.ref_tdc = evt.v1190_hit_all[i].lead_raw;  //F3PPACU-A
 
     if(evt.v1190_hit_all[i].ch == 12){ 
       evt.rf[0] = evt.v1190_hit_all[i].lead_raw;
