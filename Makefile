@@ -15,12 +15,14 @@ all: ${TARGET}
 ${TARGET}: $(OBJECTS)
 	${CXX} -o $@ $^ ${CFLAGS} ${LDFLAGS} ${LIBS}
 
-$(OBJDIR)/config.o: config.c
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+$(OBJDIR)/config.o: config.c | $(OBJDIR)
 	gcc $< -c -o $@ -lm -DLinux
 
-$(OBJDIR)/%.o: %.cpp
-	@[ -d $(OBJDIR) ]
-	$(CXX) ${CFLAGS} ${LDFLAGS} ${LIBS} -o $@ -c $<
+$(OBJDIR)/%.o: %.cpp | $(OBJDIR)
+	$(CXX) ${CFLAGS} -o $@ -c $<
 
 
 clean:
