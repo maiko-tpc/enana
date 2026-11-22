@@ -43,6 +43,7 @@ void analysis::set_ana(){
 
   // CH mapping of TDC
   int ppac_geo = 7;
+  //  int ppac_geo = 0;  
   unsigned int ppac_ch[N_PPAC][5] = {{0,1,2,3,4}, {5,6,7,8,9},
 				     {16,17,18,19,20}, {21,22,23,24,25}};
   

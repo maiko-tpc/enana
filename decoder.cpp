@@ -110,8 +110,8 @@ int ana_v1190(unsigned int size, unsigned int *tmpdata, evtdata *evt){
 	    tmp_hit.tot = -1;
 	  }
 	  
-	  //	  	  printf("geo:%d, ch:%d, lead:%d\n",
-	  //	  		 tmp_hit.geo, tmp_hit.ch, tmp_hit.lead_raw);
+	  //	  printf("geo:%d, ch:%d, lead:%d\n",
+	  //		 tmp_hit.geo, tmp_hit.ch, tmp_hit.lead_raw);
 	  
 	  evt->v1190_hit_all.push_back(tmp_hit);
 	  total_hit++;
