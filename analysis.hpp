@@ -46,6 +46,7 @@ using namespace std;
 
 const int seg_v792 = 21;
 const int seg_v1190 = 24;
+const int seg_v830 = 27;
 const int seg_madc32 = 32;
 const int seg_mdpp16 = 33;
 

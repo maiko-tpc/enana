@@ -498,7 +498,7 @@ int analysis::dec_event(unsigned int evesize){
 
     // Read the header
     ridf.read((char*)buf_header, sizeof(buf_header));
-    wrdcnt+=(sizeof(buf_header))*2;
+    wrdcnt += sizeof(buf_header) / 2;
 
     rev =   (buf_header[0]>>30) & 0x3;
     layer = (buf_header[0]>>28) & 0x3;    
@@ -509,7 +509,7 @@ int analysis::dec_event(unsigned int evesize){
 
     switch(cid){
     case RIDF_SEGMENT:
-      wrdcnt+=dec_segment(blksize);
+      wrdcnt += dec_segment(blksize) - sizeof(buf_header) / 2;
       break;
     case RIDF_NCSCALER:
       printf("sca\n");
@@ -576,6 +576,9 @@ int analysis::dec_segment(unsigned int segsize){
     break;
     
   case seg_v792:
+    break;
+
+  case seg_v830:
     break;
 
   case 4:
