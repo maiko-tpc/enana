@@ -11,6 +11,11 @@ const int N_MDPP_CH = 16*N_MDPP;
 const int N_PPAC = 4;
 const int N_PPAC_CH = 5;
 
+const int N_MWDC = 2;
+const int N_MWDC_PLANE = 8;
+const int N_MWDC_WIRE  = 16;
+const int MWDC_GEO[N_MWDC]={10,11};
+
 const int N_SSD = 2;
 const int N_RF = 4;
 
@@ -107,6 +112,10 @@ struct evtdata{
   bool use_pid_f3;
   bool is_pid_f2;
   bool is_pid_f3;
+
+
+  // MWDC
+  bool mwdc_hit[N_MWDC][N_MWDC_PLANE][N_MWDC_WIRE];
   
 };
 

@@ -99,6 +99,17 @@ void analysis::HistDef(){
 			       1000, 4000, 6000);
     vec_th1.push_back(h_tof_f3ppac[i]);
   }
+
+  
+  // MWDC
+  for(int i=0; i<N_MWDC; i++){
+    for(int j=0; j<N_MWDC_PLANE; j++){
+      h_mwdc_hit[i][j] = new TH1F(Form("h_mwdc_hit_%d_%d", i,j),
+				  Form("MWDC %d PL%d Hit", i,j),
+				  N_MWDC_WIRE, 0, N_MWDC_WIRE);
+      vec_th1.push_back(h_mwdc_hit[i][j]);
+    }
+  }
   
 } // end of histdef
 
@@ -192,6 +203,18 @@ void analysis::HistFill(){
 
   for(int i=0; i<4; i++){
     h_tof_f3ppac[i]->Fill(evt.rf[i]-evt.ref_tdc);
+  }
+
+
+  // MWDC
+  for(int i=0; i<N_MWDC; i++){
+    for(int j=0; j<N_MWDC_PLANE; j++){
+      for(int k=0; k<N_MWDC_WIRE; k++){
+	if(evt.mwdc_hit[i][j][k]==1){
+	  h_mwdc_hit[i][j]->Fill(k, 1.0);
+	}
+      }
+    }
   }
   
 } /// end of HistFill()

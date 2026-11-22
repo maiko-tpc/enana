@@ -113,6 +113,9 @@ int main(int argc, char *argv[]) {
     printf("\n");
     printf("Usage: ./enana xxxx.ridf xxxx.root\n");
     printf("\n");
+    printf("Option:\n");
+    printf("-babian : Use babian online data\n");    
+    printf("\n");
     exit(1);
   }
   

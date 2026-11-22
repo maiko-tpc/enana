@@ -169,6 +169,10 @@ private:
 
   TH1F *h_tof_f3ppac[4];
   
+  TH1F *h_mwdc_hit[N_MWDC][N_MWDC_PLANE];
+  TH1F *h_mwdc_tdc[N_MWDC][N_MWDC_PLANE];  
+  
+
   // list of histograms
   vector<TH1F*> vec_th1;
   vector<TH2F*> vec_th2;  
@@ -214,6 +218,8 @@ private:
   optdata opt;
 
   ana_ppac ppac[N_PPAC];
+
+  ana_mwdc mwdc;  
   
 };
 

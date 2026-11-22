@@ -56,4 +56,15 @@ private:
 
 };
 
+
+class ana_mwdc{
+public:
+  ana_mwdc();
+  ~ana_mwdc();  
+  int analyze(evtdata *evt);
+  int GetHit(evtdata *evt);
+  
+};
+
+
 #endif

@@ -18,6 +18,7 @@ Just type `$> make`
   - -web [port num]: Enable THttp server. http://aino-1:[port num]
   - -last: Analyze from the last block.
   - -refresh: Auto refresh of the http histograms in every 3 mins.
+  - -babian: Use babian online data. You should launch babian process on this PC.
 
 - Examples
   - Offline analysis: `$> ./ana data/run7777.ridf run7777.root`

@@ -58,6 +58,13 @@ void analysis::MakeTHttp(int portnum){
     serv->Register("/PID", h_tof_f3ppac[i]);
   }
   
+  // MWDC
+  for(int i=0; i<N_MWDC; i++){
+    for(int j=0; j<N_MWDC_PLANE; j++){
+      serv->Register("/MWDC", h_mwdc_hit[i][j]);
+    }
+  }
+
 } // end of MakeHttp()
 
 void analysis::HttpHistReset(){

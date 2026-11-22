@@ -49,6 +49,10 @@ void analysis::ana_event(){
   ana_rf();
   ana_pl();  
 
+  // MWDC ana
+  mwdc.analyze(&evt);
+
+  
   // PID ana
   if(evt.use_pid_f2){
     evt.is_pid_f2 = pid_f2->IsInside(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[0]);
@@ -118,6 +122,15 @@ void analysis::init_event(){
   evt.is_pid_f2 = 0;
   evt.is_pid_f3 = 0;  
 
+  // MWDC
+  for(int i=0; i<N_MWDC; i++){
+    for(int j=0; j<N_MWDC_PLANE; j++){
+      for(int k=0; k<N_MWDC_WIRE; k++){
+	evt.mwdc_hit[i][j][k]=0;
+      }
+    }
+  }
+  
 } // end of init
 
 int analysis::ana_madc32(){
@@ -320,4 +333,40 @@ void analysis::ana_pl(){
       evt.pl_tdc[3] = evt.v1190_hit_all[i].lead_raw;
     }
   }
+}
+
+///////////////
+// MSDC class
+///////////////
+ana_mwdc::ana_mwdc(){
+}
+
+ana_mwdc::~ana_mwdc(){
+}
+
+int ana_mwdc::analyze(evtdata *evt){
+  GetHit(evt);
+
+  return 0;
+}
+
+int ana_mwdc::GetHit(evtdata *evt){
+  int ch, geo;
+  int plane, wire;
+
+  
+  int v1190_size = evt->v1190_hit_all.size();
+  for(int i=0; i<v1190_size; i++){
+    ch = evt->v1190_hit_all[i].ch;
+    geo = evt->v1190_hit_all[i].geo;
+
+    for(int j=0; j<N_MWDC; j++){
+      if(geo==MWDC_GEO[j]){
+	plane = (int)ch/16;
+	wire = (int)ch%16;      
+	evt->mwdc_hit[j][plane][wire]=1;
+      }
+    }
+  }
+  return 0;
 }
