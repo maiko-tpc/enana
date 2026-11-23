@@ -63,9 +63,36 @@ analysis::~analysis(){
 //   v1|request-id|N|x1,y1|x2,y2|...|xN,yN
 // The editor only saves F2; no code is executed from user-supplied text.
 void analysis::ProcessCutSaveRequest(){
-  const std::string payload = cutSaveRequest.GetTitle();
-  if (payload.empty()) return;
+  // THttpServer may leave URL percent-encoding in the SetTitle() argument.
+  // Decode only well-formed %XX sequences. If already decoded, keep it intact.
+  auto decodePercent = [](const std::string &encoded) {
+    auto hex = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9') return ch - '0';
+      if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+      if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+      return -1;
+    };
+    std::string decoded;
+    decoded.reserve(encoded.size());
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+      if (encoded[i] == '%' && i + 2 < encoded.size()) {
+        const int hi = hex(encoded[i+1]);
+        const int lo = hex(encoded[i+2]);
+        if (hi >= 0 && lo >= 0) {
+          decoded.push_back(static_cast<char>((hi << 4) | lo));
+          i += 2;
+          continue;
+        }
+      }
+      decoded.push_back(encoded[i]);
+    }
+    return decoded;
+  };
+
+  const std::string encoded = cutSaveRequest.GetTitle();
+  if (encoded.empty()) return;
   cutSaveRequest.SetTitle("");
+  const std::string payload = decodePercent(encoded);
 
   std::vector<std::string> fields;
   std::istringstream input(payload);
@@ -73,6 +100,8 @@ void analysis::ProcessCutSaveRequest(){
   while (std::getline(input, field, '|')) fields.push_back(field);
   if (fields.size() < 3) {
     cutSaveResult.SetTitle("ERROR|unknown|Malformed cut request");
+    printf("Cut save failed: Malformed cut request (%zu fields, %zu encoded bytes)\n",
+           fields.size(), encoded.size());
     return;
   }
   const std::string id = fields[1];
@@ -634,7 +663,8 @@ int analysis::dec_event(unsigned int evesize){
   unsigned int tmpbuf;
   unsigned int wrdcnt=4;
   // RIDF block sizes are measured in 16-bit words.
-  const unsigned int header_words = sizeof(buf_header) / sizeof(unsigned short);
+  constexpr unsigned int RIDF_WORD_SIZE = 2; // bytes in one RIDF word
+  const unsigned int header_words = sizeof(buf_header) / RIDF_WORD_SIZE;
   
   // Read the event number in the header
   ridf.read((char*)&tmpbuf, sizeof(tmpbuf));      
@@ -733,7 +763,6 @@ int analysis::dec_segment(unsigned int segsize){
 
   case seg_v830:
     break;
-
   case 4:
     break;
     
