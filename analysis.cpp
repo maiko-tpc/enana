@@ -731,6 +731,9 @@ int analysis::dec_segment(unsigned int segsize){
   case seg_v792:
     break;
 
+  case seg_v830:
+    break;
+
   case 4:
     break;
     
