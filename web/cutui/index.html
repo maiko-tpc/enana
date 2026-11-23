@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -31,23 +31,23 @@
 <main>
   <header>
     <h1>enana : F2 PID Cut Editor</h1>
-    <a href="/">通常のTHttpServer画面へ戻る</a>
+    <a href="/">Back to THttpServer</a>
   </header>
   <section class="panel">
     <div class="toolbar">
-      <button id="reload" type="button">ヒストグラムを更新</button>
-      <button id="new-cut" type="button">新規カット</button>
-      <button id="close-cut" class="primary" type="button" disabled>多角形を確定</button>
-      <button id="undo" type="button" disabled>最後の頂点を削除</button>
-      <span id="status" role="status">読み込み準備中</span>
+      <button id="reload" type="button">Refresh histogram</button>
+      <button id="new-cut" type="button">New cut</button>
+      <button id="close-cut" class="primary" type="button" disabled>Close polygon</button>
+      <button id="undo" type="button" disabled>Undo last point</button>
+      <span id="status" role="status">Ready to load</span>
     </div>
     <div id="histogram"></div>
-    <p class="hint">作成中：プロット領域をクリックして頂点を追加 → 3点以上で「多角形を確定」。確定後は黄色い頂点をドラッグして編集できます。新規カットで最初から描き直せます。</p>
+    <p class="hint">To draw a cut, click the plot to add vertices, then select “Close polygon” (at least three points). Drag the yellow handles to adjust vertices. Select “New cut” to start over.</p>
   </section>
   <section class="panel">
-    <label for="coordinates">カット頂点（ヒストグラムの実座標、JSON）</label>
+    <label for="coordinates">Cut vertices (histogram axis coordinates, JSON)</label>
     <textarea id="coordinates" readonly spellcheck="false"></textarea>
-    <p class="hint">ステップ2では編集と座標の確認のみ。ROOTファイルへの保存・解析への適用はまだ行いません。頂点の配列は始点の重複なしで保持しています。</p>
+    <p class="hint">Step 2 supports editing and inspecting coordinates only. Saving to a ROOT file and applying the cut to analysis are not implemented yet. The first vertex is not duplicated at the end of the point list.</p>
   </section>
 </main>
 <script type="module">
@@ -138,7 +138,7 @@
       const p = pixelToData(ev);
       if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
       points.push(p);
-      setStatus(`頂点を追加しました（${points.length}点）`);
+      setStatus(`Vertex added (${points.length} points)`);
       rebuildOverlay();
     });
     layer.appendChild(surface);
@@ -186,11 +186,11 @@
     if (loading) return;
     loading = true;
     reloadBtn.disabled = true;
-    setStatus("読み込み中...");
+    setStatus("Loading histogram...");
     try {
       const hist = await httpRequest("/PID/h_pid_f2/root.json", "object");
       if (!hist || !String(hist._typename || "").startsWith("TH2"))
-        throw new Error("h_pid_f2 がTH2として取得できませんでした");
+        throw new Error("Could not retrieve h_pid_f2 as a TH2 histogram");
       const nextPainter = painter ? await redraw("histogram", hist, "colz")
                                   : await draw("histogram", hist, "colz");
       painter = nextPainter || painter;
@@ -198,12 +198,12 @@
       frameElement = framePainter?.getFrameSvg?.().node();
       if (!frameElement || typeof framePainter.grx !== "function" ||
           typeof framePainter.revertAxis !== "function")
-        throw new Error("JSROOTのFramePainterを取得できませんでした");
+        throw new Error("Could not access the JSROOT FramePainter");
       rebuildOverlay();
-      setStatus("最終更新: " + new Date().toLocaleTimeString("ja-JP"));
+      setStatus("Last updated: " + new Date().toLocaleTimeString("en-GB"));
     } catch (err) {
       console.error(err);
-      setStatus("表示失敗: " + String(err));
+      setStatus("Display error: " + String(err));
     } finally {
       loading = false;
       reloadBtn.disabled = false;
@@ -216,12 +216,12 @@
     closed = false;
     dragIndex = -1;
     rebuildOverlay();
-    setStatus("新規カット：プロット領域をクリックして頂点を追加してください");
+    setStatus("New cut: click the plot to add vertices");
   });
   document.getElementById("undo").addEventListener("click", () => {
     if (!closed && points.length) points.pop();
     rebuildOverlay();
-    setStatus("最後の頂点を削除しました");
+    setStatus("Last vertex removed");
   });
   closeBtn.addEventListener("click", () => {
     if (closed || points.length < 3) return;
@@ -232,12 +232,12 @@
       twiceArea += a.x * b.y - b.x * a.y;
     }
     if (Math.abs(twiceArea) < 1e-8) {
-      setStatus("無効な多角形です。異なる位置に3点以上指定してください");
+      setStatus("Invalid polygon: specify at least three non-collinear points");
       return;
     }
     closed = true;
     rebuildOverlay();
-    setStatus("多角形を確定しました。頂点をドラッグして調整できます");
+    setStatus("Polygon closed. Drag the vertices to adjust the cut");
   });
 
   updateControls();
