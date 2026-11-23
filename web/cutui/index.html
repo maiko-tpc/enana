@@ -3,68 +3,244 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>enana - F2 PID cut editor</title>
+  <title>enana - F2 PID Cut Editor (Step 2)</title>
   <style>
-    body { margin: 0; background: #f5f7fa; color: #152238;
-           font: 16px/1.5 system-ui, sans-serif; }
-    main { max-width: 1120px; margin: 28px auto; padding: 0 16px; }
-    header { display: flex; align-items: center; justify-content: space-between;
-             gap: 20px; flex-wrap: wrap; }
-    h1 { font-size: 1.5rem; margin: 0; }
-    .panel { margin-top: 18px; background: white; padding: 16px;
-             border: 1px solid #dde2e9; border-radius: 12px; }
-    #histogram { width: 100%; height: min(70vh, 650px); min-height: 400px; }
-    .toolbar { display: flex; align-items: center; gap: 16px;
-               flex-wrap: wrap; margin-bottom: 10px; }
-    button { padding: 7px 14px; font-size: 1rem; cursor: pointer; }
-    #status { color: #42566e; }
-    .hint { color: #52677b; font-size: 0.9rem; }
+    :root { font-family: system-ui, -apple-system, sans-serif; color: #18283a; }
+    body { margin: 0; background: #f3f6fa; }
+    main { max-width: 1160px; margin: 22px auto; padding: 0 15px; }
+    header { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+    h1 { font-size: 1.42rem; margin: 0; }
+    a { color: #175a9e; }
+    .panel { background: white; border: 1px solid #dce3eb; border-radius: 11px; padding: 14px; margin-top: 14px; }
+    .toolbar { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+    button { border: 1px solid #b7c6d8; border-radius: 6px; padding: 7px 12px; cursor: pointer; background: #f8fbff; color: #18283a; font-size: .94rem; }
+    button:hover:not(:disabled) { background: #e6f1ff; }
+    button:disabled { cursor: not-allowed; opacity: .43; }
+    button.primary { background: #195fa7; border-color: #195fa7; color: white; }
+    button.primary:hover:not(:disabled) { background: #124d89; }
+    #status { color: #425670; font-size: .92rem; margin-left: auto; }
+    #histogram { width: 100%; height: min(70vh, 650px); min-height: 390px; }
+    .hint { font-size: .91rem; color: #51667f; margin: 9px 0 0; }
+    label { font-size: .9rem; font-weight: 600; display: block; margin: 0 0 6px; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 110px; border: 1px solid #c9d4df; border-radius: 7px; padding: 9px; resize: vertical; font: 13px/1.45 ui-monospace, monospace; }
+    .cutui-layer .cut-handle { cursor: grab; }
+    .cutui-layer .cut-handle:active { cursor: grabbing; }
   </style>
 </head>
 <body>
 <main>
   <header>
     <h1>enana : F2 PID Cut Editor</h1>
-    <a href="/">通常のTHttpServer画面に戻る</a>
+    <a href="/">通常のTHttpServer画面へ戻る</a>
   </header>
   <section class="panel">
     <div class="toolbar">
-      <button type="button" id="reload">ヒストグラムを更新</button>
+      <button id="reload" type="button">ヒストグラムを更新</button>
+      <button id="new-cut" type="button">新規カット</button>
+      <button id="close-cut" class="primary" type="button" disabled>多角形を確定</button>
+      <button id="undo" type="button" disabled>最後の頂点を削除</button>
       <span id="status" role="status">読み込み準備中</span>
     </div>
     <div id="histogram"></div>
-    <p class="hint">ステップ1：表示機能のみ。次のステップで多角形カットの編集機能を追加します。</p>
+    <p class="hint">作成中：プロット領域をクリックして頂点を追加 → 3点以上で「多角形を確定」。確定後は黄色い頂点をドラッグして編集できます。新規カットで最初から描き直せます。</p>
+  </section>
+  <section class="panel">
+    <label for="coordinates">カット頂点（ヒストグラムの実座標、JSON）</label>
+    <textarea id="coordinates" readonly spellcheck="false"></textarea>
+    <p class="hint">ステップ2では編集と座標の確認のみ。ROOTファイルへの保存・解析への適用はまだ行いません。頂点の配列は始点の重複なしで保持しています。</p>
   </section>
 </main>
 <script type="module">
   import { httpRequest, draw, redraw } from "/jsrootsys/modules/main.mjs";
 
-  let initialized = false;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const statusEl = document.getElementById("status");
+  const coordEl = document.getElementById("coordinates");
+  const closeBtn = document.getElementById("close-cut");
+  const undoBtn = document.getElementById("undo");
+  const reloadBtn = document.getElementById("reload");
+
+  let painter = null;
+  let framePainter = null;
+  let frameElement = null;
+  let points = []; // {x,y} : ROOT histogram axis coordinates
+  let closed = false;
+  let dragIndex = -1;
   let loading = false;
-  const status = document.getElementById("status");
+
+  function setStatus(message) { statusEl.textContent = message; }
+
+  function updateControls() {
+    closeBtn.disabled = closed || points.length < 3;
+    undoBtn.disabled = closed || points.length === 0;
+    coordEl.value = JSON.stringify({
+      name: "pidcut_f2", x: "rf[2]-ref_tdc", y: "ssd.ene[0]",
+      closed, points
+    }, null, 2);
+  }
+
+  function svgElement(tag, attributes = {}) {
+    const elem = document.createElementNS(SVG_NS, tag);
+    for (const [key, val] of Object.entries(attributes)) elem.setAttribute(key, String(val));
+    return elem;
+  }
+
+  // Convert a Firefox/Chrome pointer position to JSROOT frame-local pixels.
+  function pointerPixels(event) {
+    if (!frameElement) return null;
+    const ctm = frameElement.getScreenCTM();
+    if (!ctm) return null;
+    const svg = frameElement.ownerSVGElement;
+    const p = svg.createSVGPoint();
+    p.x = event.clientX;
+    p.y = event.clientY;
+    return p.matrixTransform(ctm.inverse());
+  }
+
+  function pixelToData(event, clamp = false) {
+    if (!framePainter) return null;
+    const pixel = pointerPixels(event);
+    if (!pixel) return null;
+    const w = framePainter.getFrameWidth();
+    const h = framePainter.getFrameHeight();
+    let x = pixel.x, y = pixel.y;
+    if (!clamp && (x < 0 || y < 0 || x > w || y > h)) return null;
+    if (clamp) {
+      x = Math.max(0, Math.min(w, x));
+      y = Math.max(0, Math.min(h, y));
+    }
+    return { x: framePainter.revertAxis("x", x), y: framePainter.revertAxis("y", y) };
+  }
+
+  function dataToPixel(point) {
+    return { x: framePainter.grx(point.x), y: framePainter.gry(point.y) };
+  }
+
+  // Root frame <g> already uses the correct SVG transform; overlay uses
+  // the same local pixel coordinates as JSROOT's grx()/gry() functions.
+  function rebuildOverlay() {
+    if (!frameElement || !framePainter) return;
+    frameElement.querySelectorAll(":scope > .cutui-layer").forEach(el => el.remove());
+    const layer = svgElement("g", { class: "cutui-layer" });
+    const w = framePainter.getFrameWidth();
+    const h = framePainter.getFrameHeight();
+
+    const surface = svgElement("rect", {
+      x: 0, y: 0, width: w, height: h,
+      fill: "transparent", "pointer-events": "all"
+    });
+    surface.style.cursor = closed ? "default" : "crosshair";
+    surface.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();  // don't trigger JSROOT's zoom handler
+      if (closed) return;
+      const p = pixelToData(ev);
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+      points.push(p);
+      setStatus(`頂点を追加しました（${points.length}点）`);
+      rebuildOverlay();
+    });
+    layer.appendChild(surface);
+
+    if (points.length) {
+      const screen = points.map(dataToPixel);
+      const path = svgElement(closed && points.length >= 3 ? "polygon" : "polyline", {
+        points: screen.map(p => `${p.x},${p.y}`).join(" "),
+        fill: closed ? "rgba(245,165,28,0.15)" : "none",
+        stroke: "#f2a120", "stroke-width": 2.6,
+        "stroke-linejoin": "round", "pointer-events": "none"
+      });
+      layer.appendChild(path);
+
+      screen.forEach((p, i) => {
+        const circle = svgElement("circle", {
+          cx: p.x, cy: p.y, r: 5.5,
+          fill: "#ffce54", stroke: "#664200", "stroke-width": 1.5,
+          class: "cut-handle", "pointer-events": "all"
+        });
+        circle.addEventListener("pointerdown", (ev) => {
+          if (ev.button !== 0) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          dragIndex = i;
+        });
+        layer.appendChild(circle);
+      });
+    }
+    frameElement.appendChild(layer);
+    updateControls();
+  }
+
+  window.addEventListener("pointermove", (ev) => {
+    if (dragIndex < 0) return;
+    const p = pixelToData(ev, true);
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+    points[dragIndex] = p;
+    rebuildOverlay();
+  });
+  window.addEventListener("pointerup", () => { dragIndex = -1; });
+  window.addEventListener("pointercancel", () => { dragIndex = -1; });
 
   async function refreshHistogram() {
     if (loading) return;
     loading = true;
-    status.textContent = "読み込み中...";
+    reloadBtn.disabled = true;
+    setStatus("読み込み中...");
     try {
       const hist = await httpRequest("/PID/h_pid_f2/root.json", "object");
-      if (!initialized) {
-        await draw("histogram", hist, "colz");
-        initialized = true;
-      } else {
-        await redraw("histogram", hist, "colz");
-      }
-      status.textContent = "最終更新: " + new Date().toLocaleTimeString("ja-JP");
+      if (!hist || !String(hist._typename || "").startsWith("TH2"))
+        throw new Error("h_pid_f2 がTH2として取得できませんでした");
+      const nextPainter = painter ? await redraw("histogram", hist, "colz")
+                                  : await draw("histogram", hist, "colz");
+      painter = nextPainter || painter;
+      framePainter = painter?.getFramePainter?.();
+      frameElement = framePainter?.getFrameSvg?.().node();
+      if (!frameElement || typeof framePainter.grx !== "function" ||
+          typeof framePainter.revertAxis !== "function")
+        throw new Error("JSROOTのFramePainterを取得できませんでした");
+      rebuildOverlay();
+      setStatus("最終更新: " + new Date().toLocaleTimeString("ja-JP"));
     } catch (err) {
       console.error(err);
-      status.textContent = "取得失敗: " + String(err);
+      setStatus("表示失敗: " + String(err));
     } finally {
       loading = false;
+      reloadBtn.disabled = false;
     }
   }
 
   document.getElementById("reload").addEventListener("click", refreshHistogram);
+  document.getElementById("new-cut").addEventListener("click", () => {
+    points = [];
+    closed = false;
+    dragIndex = -1;
+    rebuildOverlay();
+    setStatus("新規カット：プロット領域をクリックして頂点を追加してください");
+  });
+  document.getElementById("undo").addEventListener("click", () => {
+    if (!closed && points.length) points.pop();
+    rebuildOverlay();
+    setStatus("最後の頂点を削除しました");
+  });
+  closeBtn.addEventListener("click", () => {
+    if (closed || points.length < 3) return;
+    // reject collinear polygon, which cannot define an area
+    let twiceArea = 0;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      twiceArea += a.x * b.y - b.x * a.y;
+    }
+    if (Math.abs(twiceArea) < 1e-8) {
+      setStatus("無効な多角形です。異なる位置に3点以上指定してください");
+      return;
+    }
+    closed = true;
+    rebuildOverlay();
+    setStatus("多角形を確定しました。頂点をドラッグして調整できます");
+  });
+
+  updateControls();
   refreshHistogram();
 </script>
 </body>
