@@ -158,7 +158,7 @@ int analysis::cnt_v1190(){
     evt.tdc_hit[ch] = 1;
     evt.tdc_multi[ch]++;
     if(evt.tdc_multi[ch]==1){
-      evt.tdc_lead[ch] = evt.v1190_hit_all[ch].lead_cor;
+      evt.tdc_lead[ch] = evt.v1190_hit_all[i].lead_cor;
     }
   }
   return 0;
