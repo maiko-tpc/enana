@@ -41,6 +41,7 @@
       <button id="undo" type="button" disabled>Undo last point</button>
       <button id="save-cut" type="button" disabled>Save Cut</button>
       <button id="load-cut" type="button" disabled>Load Cut</button>
+      <button id="apply-cut" class="primary" type="button" disabled>Apply Cut</button>
       <span id="status" role="status">Ready to load</span>
     </div>
     <div id="histogram"></div>
@@ -49,7 +50,7 @@
   <section class="panel">
     <label for="coordinates">Cut vertices (histogram axis coordinates, JSON)</label>
     <textarea id="coordinates" readonly spellcheck="false"></textarea>
-    <p class="hint">Save Cut writes <code>macro/pid_f2.root</code> with a ROOT <code>TCutG</code> named <code>pidcut_f2</code>. Load Cut retrieves the saved polygon for editing. Neither operation changes the cut currently used by the running analysis; restart enana to use the saved cut. The first vertex is not duplicated in the JSON list.</p>
+    <p class="hint">Save Cut writes <code>macro/pid_f2.root</code> with a ROOT <code>TCutG</code> named <code>pidcut_f2</code>. Load Cut retrieves the saved polygon for editing. Apply Cut changes the in-memory cut for subsequent events only, without saving. Previously filled events, histograms, and trees are not recalculated. The first vertex is not duplicated in the JSON list.</p>
   </section>
 </main>
 <script type="module">
@@ -63,8 +64,10 @@
   const reloadBtn = document.getElementById("reload");
   const saveBtn = document.getElementById("save-cut");
   const loadBtn = document.getElementById("load-cut");
+  const applyBtn = document.getElementById("apply-cut");
   let saving = false;
   let cutLoading = false;
+  let applying = false;
 
   let painter = null;
   let framePainter = null;
@@ -79,8 +82,9 @@
   function updateControls() {
     closeBtn.disabled = closed || points.length < 3;
     undoBtn.disabled = closed || points.length === 0;
-    saveBtn.disabled = !closed || points.length < 3 || saving || cutLoading || !framePainter;
-    loadBtn.disabled = saving || cutLoading || loading || !framePainter;
+    saveBtn.disabled = !closed || points.length < 3 || saving || cutLoading || applying || !framePainter;
+    loadBtn.disabled = saving || cutLoading || applying || loading || !framePainter;
+    applyBtn.disabled = !closed || points.length < 3 || points.length > 48 || saving || cutLoading || applying || !framePainter;
     coordEl.value = JSON.stringify({
       name: "pidcut_f2", x: "rf[2]-ref_tdc", y: "ssd.ene[0]",
       closed, points
@@ -252,7 +256,7 @@
   // A short numeric identifier is used to correlate asynchronous server status
   // with the exact Save Cut request made by this browser tab.
   async function saveCut() {
-    if (!closed || points.length < 3 || points.length > 48 || saving) return;
+    if (!closed || points.length < 3 || points.length > 48 || saving || applying) return;
     const id = String(Date.now());
     const numbers = points.map(p => {
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y))
@@ -300,12 +304,62 @@
       updateControls();
     }
   }
+  async function applyCut() {
+    if (!closed || points.length < 3 || points.length > 48 || saving || cutLoading || applying) return;
+    const id = String(Date.now());
+    const numbers = points.map(p => {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y))
+        throw new Error("Invalid polygon coordinates");
+      return `${p.x.toPrecision(15)},${p.y.toPrecision(15)}`;
+    });
+    const payload = ["v1", id, String(points.length), ...numbers].join("|");
+    applying = true;
+    updateControls();
+    setStatus("Applying cut to running analysis...");
+    try {
+      const url = "/CutEditor/cut_apply_request/exe.json?method=SetTitle&title=" +
+                  encodeURIComponent(payload);
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status} sending cut coordinates`);
+      // A successful exe.json request means SetTitle was invoked, NOT that
+      // the cut was applied successfully. Wait for the analysis-loop acknowledgement.
+      const deadline = Date.now() + 12000;
+      let applied = false;
+      while (Date.now() < deadline) {
+        const statusResponse = await fetch(
+          "/CutEditor/cut_apply_result/root.json?nocache=" + Date.now(),
+          { cache: "no-store" }
+        );
+        if (!statusResponse.ok)
+          throw new Error(`HTTP ${statusResponse.status} checking apply result`);
+        const result = await statusResponse.json();
+        const parts = String(result.fTitle || "").split("|");
+        if (parts[1] === id) {
+          if (parts[0] === "OK") {
+            setStatus("Apply successful: new cut active for subsequent events (not saved)");
+            applied = true;
+            break;
+          }
+          if (parts[0] === "ERROR") throw new Error(parts.slice(2).join("|"));
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      if (!applied) throw new Error("Apply timed out. Check enana terminal.");
+    } catch(err) {
+      console.error(err);
+      setStatus("Apply error: " + String(err.message || err));
+    } finally {
+      applying = false;
+      updateControls();
+    }
+  }
+  applyBtn.addEventListener("click", applyCut);
   saveBtn.addEventListener("click", saveCut);
 
   // Fetch the last saved polygon from the ROOT file through the analysis loop.
   // Loading is browser-only: it does not change pid_f2 used by live events.
   async function loadCut() {
-    if (saving || cutLoading || loading || !framePainter) return;
+    if (saving || cutLoading || applying || loading || !framePainter) return;
     if (points.length && !window.confirm(
       "Replace the current polygon with the cut saved in macro/pid_f2.root?")) return;
     const id = String(Date.now());

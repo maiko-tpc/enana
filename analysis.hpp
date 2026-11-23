@@ -97,6 +97,7 @@ public:
   void HttpHistReset();
   void ProcessCutSaveRequest();  // save a browser-edited cut (no live apply)  
   void ProcessCutLoadRequest();  // read saved ROOT TCutG without applying it
+  void ProcessCutApplyRequest(); // apply a browser polygon to subsequent events
 
   // defined in ana_event.cpp
   void ana_event();
@@ -152,6 +153,8 @@ private:
   TNamed cutSaveResult{"cut_save_result", "IDLE"};
   TNamed cutLoadRequest{"cut_load_request", ""};
   TNamed cutLoadResult{"cut_load_result", "IDLE"};
+  TNamed cutApplyRequest{"cut_apply_request", ""};
+  TNamed cutApplyResult{"cut_apply_result", "IDLE"};
 
   // PID file
   TCutG *pid_f2;

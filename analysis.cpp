@@ -273,6 +273,135 @@ void analysis::ProcessCutSaveRequest(){
          n, final_name);
 }
 
+// Apply Cut: replaces only the in-memory F2 PID cut; does not change the ROOT file.
+// Already-filled events, histograms and tree entries are unchanged.
+void analysis::ProcessCutApplyRequest(){
+  // THttpServer may leave URL percent-encoding in the SetTitle() argument.
+  // Decode only well-formed %XX sequences. If already decoded, keep it intact.
+  auto decodePercent = [](const std::string &encoded) {
+    auto hex = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9') return ch - '0';
+      if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+      if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+      return -1;
+    };
+    std::string decoded;
+    decoded.reserve(encoded.size());
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+      if (encoded[i] == '%' && i + 2 < encoded.size()) {
+        const int hi = hex(encoded[i+1]);
+        const int lo = hex(encoded[i+2]);
+        if (hi >= 0 && lo >= 0) {
+          decoded.push_back(static_cast<char>((hi << 4) | lo));
+          i += 2;
+          continue;
+        }
+      }
+      decoded.push_back(encoded[i]);
+    }
+    return decoded;
+  };
+
+  const std::string encoded = cutApplyRequest.GetTitle();
+  if (encoded.empty()) return;
+  cutApplyRequest.SetTitle("");
+  const std::string payload = decodePercent(encoded);
+
+  std::vector<std::string> fields;
+  std::istringstream input(payload);
+  std::string field;
+  while (std::getline(input, field, '|')) fields.push_back(field);
+  if (fields.size() < 3) {
+    cutApplyResult.SetTitle("ERROR|unknown|Malformed cut request");
+    printf("Cut apply failed: Malformed cut request (%zu fields, %zu encoded bytes)\n",
+           fields.size(), encoded.size());
+    return;
+  }
+  const std::string id = fields[1];
+  auto fail = [&](const std::string &reason) {
+    cutApplyResult.SetTitle(("ERROR|" + id + "|" + reason).c_str());
+    printf("Cut apply failed: %s\n", reason.c_str());
+  };
+  if (fields[0] != "v1" || id.empty() || id.size() > 32 ||
+      !std::all_of(id.begin(), id.end(), [](unsigned char c){ return c >= '0' && c <= '9'; })) {
+    fail("Invalid request ID or protocol");
+    return;
+  }
+  std::size_t n = 0;
+  try {
+    std::size_t pos = 0;
+    n = std::stoul(fields[2], &pos, 10);
+    if (pos != fields[2].size()) throw std::invalid_argument("not an integer");
+  } catch (...) {
+    fail("Invalid vertex count");
+    return;
+  }
+  if (n < 3 || n > 48 || fields.size() != n + 3) {
+    fail("Expected 3 to 48 vertices");
+    return;
+  }
+
+  std::vector<std::pair<double,double>> vertices;
+  vertices.reserve(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    const std::string &s = fields[i+3];
+    const auto comma = s.find(',');
+    if (comma == std::string::npos || s.find(',', comma+1) != std::string::npos) {
+      fail("Invalid vertex format");
+      return;
+    }
+    try {
+      std::size_t px = 0, py = 0;
+      double x = std::stod(s.substr(0,comma), &px);
+      double y = std::stod(s.substr(comma+1), &py);
+      if (px != comma || py != s.size()-comma-1 ||
+          !std::isfinite(x) || !std::isfinite(y)) throw std::invalid_argument("invalid coordinate");
+      vertices.emplace_back(x,y);
+    } catch (...) {
+      fail("Invalid numeric coordinates");
+      return;
+    }
+  }
+  // Area check with coordinates translated to first vertex to reduce
+  // floating-point cancellation for axes far from zero.
+  double twice_area = 0.;
+  double xmin = vertices[0].first, xmax = xmin;
+  double ymin = vertices[0].second, ymax = ymin;
+  for (std::size_t i=0; i<n; ++i) {
+    const auto &a = vertices[i];
+    const auto &b = vertices[(i+1)%n];
+    double ax = a.first - vertices[0].first;
+    double ay = a.second - vertices[0].second;
+    double bx = b.first - vertices[0].first;
+    double by = b.second - vertices[0].second;
+    twice_area += ax*by-bx*ay;
+    xmin = std::min(xmin,a.first); xmax = std::max(xmax,a.first);
+    ymin = std::min(ymin,a.second); ymax = std::max(ymax,a.second);
+  }
+  const double span_area = (xmax-xmin)*(ymax-ymin);
+  if (!std::isfinite(twice_area) || !std::isfinite(span_area) ||
+      span_area <= 0 || std::abs(twice_area) <= span_area*1.e-10) {
+    fail("Degenerate polygon");
+    return;
+  }
+
+  // Install the validated polygon in memory. Do not modify the saved ROOT file.
+  auto *next = new TCutG("pidcut_f2", static_cast<Int_t>(n + 1));
+  next->SetVarX("rf[2]-ref_tdc");
+  next->SetVarY("ssd.ene[0]");
+  for (std::size_t i=0; i<n; ++i)
+    next->SetPoint(static_cast<Int_t>(i), vertices[i].first, vertices[i].second);
+  next->SetPoint(static_cast<Int_t>(n), vertices[0].first, vertices[0].second);
+
+  TCutG *previous = pid_f2;
+  pid_f2 = next;
+  evt.use_pid_f2 = 1;
+  delete previous;
+
+  cutApplyResult.SetTitle(("OK|" + id + "|Applied to subsequent events").c_str());
+  printf("Applied Web TCutG pidcut_f2 (%zu vertices): subsequent events only\n", n);
+}
+
 void analysis::SetPID(int pidnum){
   pid = pidnum;
 }
@@ -466,6 +595,7 @@ void analysis::analyze(){
     bool exit_requested = gSystem->ProcessEvents();
     ProcessCutSaveRequest();
     ProcessCutLoadRequest();
+    ProcessCutApplyRequest();
     if(exit_requested) break;
     if( opt.online_flag==1 && IsRIDFeof()){
       printf("Waiting for data... (eve: %d) sleep_cnt=%d\r",evt.eve, evt.sleep_cnt);
@@ -544,6 +674,7 @@ void analysis::analyze_online(){
       bool exit_requested = gSystem->ProcessEvents();
       ProcessCutSaveRequest();
       ProcessCutLoadRequest();
+      ProcessCutApplyRequest();
       if (exit_requested || STOP_FLAG==1) break;
       usleep(100000);
       continue;
@@ -670,6 +801,7 @@ void analysis::analyze_online(){
     bool exit_requested = gSystem->ProcessEvents();
     ProcessCutSaveRequest();
     ProcessCutLoadRequest();
+    ProcessCutApplyRequest();
     if(exit_requested) break;
 
     if(STOP_FLAG==1){
