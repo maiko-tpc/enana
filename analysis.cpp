@@ -247,7 +247,10 @@ void analysis::ProcessCutSaveRequest(){
       fail("Cannot open temporary ROOT file");
       return;
     }
-    TCutG cut("pidcut_f2", static_cast<Int_t>(n+1));
+    // The named TCutG constructor deletes any matching object in ROOT specials.
+    // Use the default constructor to avoid deleting the active pid_f2 cut.
+    TCutG cut;
+    cut.SetName("pidcut_f2");
     cut.SetVarX("rf[2]-ref_tdc");
     cut.SetVarY("ssd.ene[0]");
     for (std::size_t i=0; i<n; ++i)
@@ -386,7 +389,10 @@ void analysis::ProcessCutApplyRequest(){
   }
 
   // Install the validated polygon in memory. Do not modify the saved ROOT file.
-  auto *next = new TCutG("pidcut_f2", static_cast<Int_t>(n + 1));
+  // Avoid the named constructor: ROOT otherwise deletes an existing cut
+  // with the same name, potentially invalidating pid_f2.
+  auto *next = new TCutG();
+  next->SetName("pidcut_f2");
   next->SetVarX("rf[2]-ref_tdc");
   next->SetVarY("ssd.ene[0]");
   for (std::size_t i=0; i<n; ++i)
