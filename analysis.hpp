@@ -22,6 +22,7 @@
 #include <TF1.h>
 #include <TLatex.h>
 #include <TCutG.h>
+#include <TNamed.h>
 
 #include <THttpServer.h>
 #include <TInterpreter.h>
@@ -46,7 +47,6 @@ using namespace std;
 
 const int seg_v792 = 21;
 const int seg_v1190 = 24;
-const int seg_v830 = 27;
 const int seg_madc32 = 32;
 const int seg_mdpp16 = 33;
 
@@ -93,7 +93,8 @@ public:
 
   // defined in httpdef.cpp
   void MakeTHttp(int portnum);
-  void HttpHistReset();  
+  void HttpHistReset();
+  void ProcessCutSaveRequest();  // save a browser-edited cut (no live apply)  
 
   // defined in ana_event.cpp
   void ana_event();
@@ -142,6 +143,11 @@ private:
   TTree *tree;
 
   THttpServer* serv;
+
+  // Browser-to-analysis inbox. THttpServer executes SetTitle() on the main
+  // ROOT thread; ProcessCutSaveRequest() validates and saves the payload.
+  TNamed cutSaveRequest{"cut_save_request", ""};
+  TNamed cutSaveResult{"cut_save_result", "IDLE"};
 
   // PID file
   TCutG *pid_f2;

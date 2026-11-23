@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>enana - F2 PID Cut Editor (Step 2)</title>
+  <title>enana - F2 PID Cut Editor</title>
   <style>
     :root { font-family: system-ui, -apple-system, sans-serif; color: #18283a; }
     body { margin: 0; background: #f3f6fa; }
@@ -39,6 +39,7 @@
       <button id="new-cut" type="button">New cut</button>
       <button id="close-cut" class="primary" type="button" disabled>Close polygon</button>
       <button id="undo" type="button" disabled>Undo last point</button>
+      <button id="save-cut" type="button" disabled>Save Cut</button>
       <span id="status" role="status">Ready to load</span>
     </div>
     <div id="histogram"></div>
@@ -47,7 +48,7 @@
   <section class="panel">
     <label for="coordinates">Cut vertices (histogram axis coordinates, JSON)</label>
     <textarea id="coordinates" readonly spellcheck="false"></textarea>
-    <p class="hint">Step 2 supports editing and inspecting coordinates only. Saving to a ROOT file and applying the cut to analysis are not implemented yet. The first vertex is not duplicated at the end of the point list.</p>
+    <p class="hint">Save Cut writes <code>macro/pid_f2.root</code> with a ROOT <code>TCutG</code> named <code>pidcut_f2</code>. Saving does not change the cut used by the running analysis; restart enana to use the saved cut. The first vertex is not duplicated in the JSON list.</p>
   </section>
 </main>
 <script type="module">
@@ -59,6 +60,8 @@
   const closeBtn = document.getElementById("close-cut");
   const undoBtn = document.getElementById("undo");
   const reloadBtn = document.getElementById("reload");
+  const saveBtn = document.getElementById("save-cut");
+  let saving = false;
 
   let painter = null;
   let framePainter = null;
@@ -73,6 +76,7 @@
   function updateControls() {
     closeBtn.disabled = closed || points.length < 3;
     undoBtn.disabled = closed || points.length === 0;
+    saveBtn.disabled = !closed || points.length < 3 || saving || !framePainter;
     coordEl.value = JSON.stringify({
       name: "pidcut_f2", x: "rf[2]-ref_tdc", y: "ssd.ene[0]",
       closed, points
@@ -239,6 +243,59 @@
     rebuildOverlay();
     setStatus("Polygon closed. Drag the vertices to adjust the cut");
   });
+
+  // A short numeric identifier is used to correlate asynchronous server status
+  // with the exact Save Cut request made by this browser tab.
+  async function saveCut() {
+    if (!closed || points.length < 3 || points.length > 48 || saving) return;
+    const id = String(Date.now());
+    const numbers = points.map(p => {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y))
+        throw new Error("Invalid polygon coordinates");
+      return `${p.x.toPrecision(15)},${p.y.toPrecision(15)}`;
+    });
+    const payload = ["v1", id, String(points.length), ...numbers].join("|");
+    saving = true;
+    updateControls();
+    setStatus("Saving cut to ROOT file...");
+    try {
+      const url = "/CutEditor/cut_save_request/exe.json?method=SetTitle&title=" +
+                  encodeURIComponent(payload);
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status} sending cut coordinates`);
+      // A successful exe.json request means SetTitle was invoked, NOT that
+      // writing the file succeeded. Wait for the analysis-loop acknowledgement.
+      const deadline = Date.now() + 12000;
+      let saved = false;
+      while (Date.now() < deadline) {
+        const statusResponse = await fetch(
+          "/CutEditor/cut_save_result/root.json?nocache=" + Date.now(),
+          { cache: "no-store" }
+        );
+        if (!statusResponse.ok)
+          throw new Error(`HTTP ${statusResponse.status} checking save result`);
+        const result = await statusResponse.json();
+        const parts = String(result.fTitle || "").split("|");
+        if (parts[1] === id) {
+          if (parts[0] === "OK") {
+            setStatus("Save successful: macro/pid_f2.root (not applied to current analysis)");
+            saved = true;
+            break;
+          }
+          if (parts[0] === "ERROR") throw new Error(parts.slice(2).join("|"));
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      if (!saved) throw new Error("Save timed out. Check enana terminal and saved file.");
+    } catch(err) {
+      console.error(err);
+      setStatus("Save error: " + String(err.message || err));
+    } finally {
+      saving = false;
+      updateControls();
+    }
+  }
+  saveBtn.addEventListener("click", saveCut);
 
   updateControls();
   refreshHistogram();

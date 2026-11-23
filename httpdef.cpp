@@ -8,7 +8,10 @@ void analysis::MakeTHttp(int portnum){
   // TCutG editor page
   serv->AddLocation("cutui/", "./web/cutui");
 
-
+  // The browser writes cut coordinates into this TNamed object's title.
+  // The analysis thread validates them and writes the ROOT file.
+  serv->Register("/CutEditor", &cutSaveRequest);
+  serv->Register("/CutEditor", &cutSaveResult);
   /* auto refresh every 1 sec */
   serv->SetItemField("/", "_update", "1000");
   serv->SetItemField("/", "_updateperiod", "1000");

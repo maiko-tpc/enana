@@ -1,5 +1,15 @@
 #include "analysis.hpp"
 #include "ana_event.hpp"
+
+#include <algorithm>
+#include <cerrno>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <vector>
+#include <TDirectory.h>
 // #define ONLINE_DEBUG
 
 analysis::analysis(){
@@ -22,17 +32,150 @@ analysis::analysis(){
   evt.use_pid_f2=0;
   evt.use_pid_f3=0;  
 
-  TFile *file_pid_f2 = new TFile("macro/pid_f2.root");
-  if(file_pid_f2->IsOpen()) pid_f2 = (TCutG*)file_pid_f2->Get("pidcut_f2");
-  if(pid_f2->GetN()>2) evt.use_pid_f2=1;
-  
-  TFile *file_pid_f3 = new TFile("macro/pid_f3.root");
-  if(file_pid_f3->IsOpen()) pid_f3 = (TCutG*)file_pid_f3->Get("pidcut_f3");
-  if(pid_f3->GetN()>2) evt.use_pid_f3=1;
+  // Clone cuts before closing their ROOT files. Save Cut may replace the F2
+  // file while the previous cut remains active in this process.
+  pid_f2 = nullptr;
+  pid_f3 = nullptr;
+  {
+    TFile file_pid_f2("macro/pid_f2.root", "READ");
+    if (!file_pid_f2.IsZombie()) {
+      auto *stored = dynamic_cast<TCutG*>(file_pid_f2.Get("pidcut_f2"));
+      if (stored) pid_f2 = static_cast<TCutG*>(stored->Clone("pidcut_f2"));
+    }
+  }
+  if (pid_f2 && pid_f2->GetN() > 2) evt.use_pid_f2 = 1;
+
+  {
+    TFile file_pid_f3("macro/pid_f3.root", "READ");
+    if (!file_pid_f3.IsZombie()) {
+      auto *stored = dynamic_cast<TCutG*>(file_pid_f3.Get("pidcut_f3"));
+      if (stored) pid_f3 = static_cast<TCutG*>(stored->Clone("pidcut_f3"));
+    }
+  }
+  if (pid_f3 && pid_f3->GetN() > 2) evt.use_pid_f3 = 1;
 
 }
 
 analysis::~analysis(){
+}
+
+// Save request wire format (URL encoded as SetTitle argument):
+//   v1|request-id|N|x1,y1|x2,y2|...|xN,yN
+// The editor only saves F2; no code is executed from user-supplied text.
+void analysis::ProcessCutSaveRequest(){
+  const std::string payload = cutSaveRequest.GetTitle();
+  if (payload.empty()) return;
+  cutSaveRequest.SetTitle("");
+
+  std::vector<std::string> fields;
+  std::istringstream input(payload);
+  std::string field;
+  while (std::getline(input, field, '|')) fields.push_back(field);
+  if (fields.size() < 3) {
+    cutSaveResult.SetTitle("ERROR|unknown|Malformed cut request");
+    return;
+  }
+  const std::string id = fields[1];
+  auto fail = [&](const std::string &reason) {
+    cutSaveResult.SetTitle(("ERROR|" + id + "|" + reason).c_str());
+    printf("Cut save failed: %s\n", reason.c_str());
+  };
+  if (fields[0] != "v1" || id.empty() || id.size() > 32 ||
+      !std::all_of(id.begin(), id.end(), [](unsigned char c){ return c >= '0' && c <= '9'; })) {
+    fail("Invalid request ID or protocol");
+    return;
+  }
+  std::size_t n = 0;
+  try {
+    std::size_t pos = 0;
+    n = std::stoul(fields[2], &pos, 10);
+    if (pos != fields[2].size()) throw std::invalid_argument("not an integer");
+  } catch (...) {
+    fail("Invalid vertex count");
+    return;
+  }
+  if (n < 3 || n > 48 || fields.size() != n + 3) {
+    fail("Expected 3 to 48 vertices");
+    return;
+  }
+
+  std::vector<std::pair<double,double>> vertices;
+  vertices.reserve(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    const std::string &s = fields[i+3];
+    const auto comma = s.find(',');
+    if (comma == std::string::npos || s.find(',', comma+1) != std::string::npos) {
+      fail("Invalid vertex format");
+      return;
+    }
+    try {
+      std::size_t px = 0, py = 0;
+      double x = std::stod(s.substr(0,comma), &px);
+      double y = std::stod(s.substr(comma+1), &py);
+      if (px != comma || py != s.size()-comma-1 ||
+          !std::isfinite(x) || !std::isfinite(y)) throw std::invalid_argument("invalid coordinate");
+      vertices.emplace_back(x,y);
+    } catch (...) {
+      fail("Invalid numeric coordinates");
+      return;
+    }
+  }
+  // Area check with coordinates translated to first vertex to reduce
+  // floating-point cancellation for axes far from zero.
+  double twice_area = 0.;
+  double xmin = vertices[0].first, xmax = xmin;
+  double ymin = vertices[0].second, ymax = ymin;
+  for (std::size_t i=0; i<n; ++i) {
+    const auto &a = vertices[i];
+    const auto &b = vertices[(i+1)%n];
+    double ax = a.first - vertices[0].first;
+    double ay = a.second - vertices[0].second;
+    double bx = b.first - vertices[0].first;
+    double by = b.second - vertices[0].second;
+    twice_area += ax*by-bx*ay;
+    xmin = std::min(xmin,a.first); xmax = std::max(xmax,a.first);
+    ymin = std::min(ymin,a.second); ymax = std::max(ymax,a.second);
+  }
+  const double span_area = (xmax-xmin)*(ymax-ymin);
+  if (!std::isfinite(twice_area) || !std::isfinite(span_area) ||
+      span_area <= 0 || std::abs(twice_area) <= span_area*1.e-10) {
+    fail("Degenerate polygon");
+    return;
+  }
+
+  const char *tmp_name = "macro/pid_f2.root.tmp";
+  const char *final_name = "macro/pid_f2.root";
+  {
+    TDirectory::TContext restoreDirectory;
+    TFile output(tmp_name, "RECREATE");
+    if (output.IsZombie()) {
+      fail("Cannot open temporary ROOT file");
+      return;
+    }
+    TCutG cut("pidcut_f2", static_cast<Int_t>(n+1));
+    cut.SetVarX("rf[2]-ref_tdc");
+    cut.SetVarY("ssd.ene[0]");
+    for (std::size_t i=0; i<n; ++i)
+      cut.SetPoint(static_cast<Int_t>(i),vertices[i].first,vertices[i].second);
+    cut.SetPoint(static_cast<Int_t>(n),vertices[0].first,vertices[0].second);
+    output.cd();
+    const auto written = cut.Write("pidcut_f2", TObject::kOverwrite);
+    output.Close();
+    if (written <= 0 || output.TestBit(TFile::kWriteError)) {
+      std::remove(tmp_name);
+      fail("ROOT file write failed");
+      return;
+    }
+  }
+  if (std::rename(tmp_name, final_name) != 0) {
+    const std::string reason = std::strerror(errno);
+    std::remove(tmp_name);
+    fail("Could not replace cut file: " + reason);
+    return;
+  }
+  cutSaveResult.SetTitle(("OK|" + id + "|Saved to macro/pid_f2.root").c_str());
+  printf("Saved Web TCutG pidcut_f2 (%zu vertices) to %s (not applied to running analysis)\n",
+         n, final_name);
 }
 
 void analysis::SetPID(int pidnum){
@@ -225,8 +368,9 @@ void analysis::analyze(){
     
     // IMPORTANT: one should regularly call ProcessEvents
     // to let http server process requests
-    if(gSystem->ProcessEvents()) break;
-    
+    bool exit_requested = gSystem->ProcessEvents();
+    ProcessCutSaveRequest();
+    if(exit_requested) break;
     if( opt.online_flag==1 && IsRIDFeof()){
       printf("Waiting for data... (eve: %d) sleep_cnt=%d\r",evt.eve, evt.sleep_cnt);
       fflush(stdout);
@@ -300,8 +444,11 @@ void analysis::analyze_online(){
       memcpy((char *)&hd, shmp, sizeof(hd));
     }
     else{
-      sleep(1);
-      sem_v(semid, &semb);     // Unlock shared memory
+      sem_v(semid, &semb);     // Unlock shared memory before HTTP handling
+      bool exit_requested = gSystem->ProcessEvents();
+      ProcessCutSaveRequest();
+      if (exit_requested || STOP_FLAG==1) break;
+      usleep(100000);
       continue;
     }
     
@@ -423,8 +570,10 @@ void analysis::analyze_online(){
     }
     // IMPORTANT: one should regularly call ProcessEvents
     // to let http server process requests
-    if(gSystem->ProcessEvents()) break;
-    
+    bool exit_requested = gSystem->ProcessEvents();
+    ProcessCutSaveRequest();
+    if(exit_requested) break;
+
     if(STOP_FLAG==1){
       printf("bye-bye!\n");
       break;
@@ -484,6 +633,8 @@ int analysis::show_comment(unsigned int comsize){
 int analysis::dec_event(unsigned int evesize){
   unsigned int tmpbuf;
   unsigned int wrdcnt=4;
+  // RIDF block sizes are measured in 16-bit words.
+  const unsigned int header_words = sizeof(buf_header) / sizeof(unsigned short);
   
   // Read the event number in the header
   ridf.read((char*)&tmpbuf, sizeof(tmpbuf));      
@@ -498,7 +649,7 @@ int analysis::dec_event(unsigned int evesize){
 
     // Read the header
     ridf.read((char*)buf_header, sizeof(buf_header));
-    wrdcnt += sizeof(buf_header) / 2;
+    wrdcnt += header_words;
 
     rev =   (buf_header[0]>>30) & 0x3;
     layer = (buf_header[0]>>28) & 0x3;    
@@ -509,7 +660,9 @@ int analysis::dec_event(unsigned int evesize){
 
     switch(cid){
     case RIDF_SEGMENT:
-      wrdcnt += dec_segment(blksize) - sizeof(buf_header) / 2;
+      // dec_segment() returns the whole segment size, including its
+      // 4-word RIDF header, which was already counted above.
+      wrdcnt += dec_segment(blksize) - header_words;
       break;
     case RIDF_NCSCALER:
       printf("sca\n");
@@ -576,9 +729,6 @@ int analysis::dec_segment(unsigned int segsize){
     break;
     
   case seg_v792:
-    break;
-
-  case seg_v830:
     break;
 
   case 4:
