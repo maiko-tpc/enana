@@ -40,6 +40,7 @@
       <button id="close-cut" class="primary" type="button" disabled>Close polygon</button>
       <button id="undo" type="button" disabled>Undo last point</button>
       <button id="save-cut" type="button" disabled>Save Cut</button>
+      <button id="load-cut" type="button" disabled>Load Cut</button>
       <span id="status" role="status">Ready to load</span>
     </div>
     <div id="histogram"></div>
@@ -48,7 +49,7 @@
   <section class="panel">
     <label for="coordinates">Cut vertices (histogram axis coordinates, JSON)</label>
     <textarea id="coordinates" readonly spellcheck="false"></textarea>
-    <p class="hint">Save Cut writes <code>macro/pid_f2.root</code> with a ROOT <code>TCutG</code> named <code>pidcut_f2</code>. Saving does not change the cut used by the running analysis; restart enana to use the saved cut. The first vertex is not duplicated in the JSON list.</p>
+    <p class="hint">Save Cut writes <code>macro/pid_f2.root</code> with a ROOT <code>TCutG</code> named <code>pidcut_f2</code>. Load Cut retrieves the saved polygon for editing. Neither operation changes the cut currently used by the running analysis; restart enana to use the saved cut. The first vertex is not duplicated in the JSON list.</p>
   </section>
 </main>
 <script type="module">
@@ -61,7 +62,9 @@
   const undoBtn = document.getElementById("undo");
   const reloadBtn = document.getElementById("reload");
   const saveBtn = document.getElementById("save-cut");
+  const loadBtn = document.getElementById("load-cut");
   let saving = false;
+  let cutLoading = false;
 
   let painter = null;
   let framePainter = null;
@@ -76,7 +79,8 @@
   function updateControls() {
     closeBtn.disabled = closed || points.length < 3;
     undoBtn.disabled = closed || points.length === 0;
-    saveBtn.disabled = !closed || points.length < 3 || saving || !framePainter;
+    saveBtn.disabled = !closed || points.length < 3 || saving || cutLoading || !framePainter;
+    loadBtn.disabled = saving || cutLoading || loading || !framePainter;
     coordEl.value = JSON.stringify({
       name: "pidcut_f2", x: "rf[2]-ref_tdc", y: "ssd.ene[0]",
       closed, points
@@ -211,6 +215,7 @@
     } finally {
       loading = false;
       reloadBtn.disabled = false;
+      updateControls();
     }
   }
 
@@ -296,6 +301,70 @@
     }
   }
   saveBtn.addEventListener("click", saveCut);
+
+  // Fetch the last saved polygon from the ROOT file through the analysis loop.
+  // Loading is browser-only: it does not change pid_f2 used by live events.
+  async function loadCut() {
+    if (saving || cutLoading || loading || !framePainter) return;
+    if (points.length && !window.confirm(
+      "Replace the current polygon with the cut saved in macro/pid_f2.root?")) return;
+    const id = String(Date.now());
+    cutLoading = true;
+    updateControls();
+    setStatus("Loading saved cut from ROOT file...");
+    try {
+      const response = await fetch(
+        "/CutEditor/cut_load_request/exe.json?method=SetTitle&title=" + id,
+        {cache: "no-store"}
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status} requesting saved cut`);
+      const deadline = Date.now() + 12000;
+      let loaded = false;
+      while (Date.now() < deadline) {
+        const statusResponse = await fetch(
+          "/CutEditor/cut_load_result/root.json?nocache=" + Date.now(),
+          {cache: "no-store"}
+        );
+        if (!statusResponse.ok)
+          throw new Error(`HTTP ${statusResponse.status} checking load result`);
+        const result = await statusResponse.json();
+        const parts = String(result.fTitle || "").split("|");
+        if (parts[1] === id) {
+          if (parts[0] === "ERROR") throw new Error(parts.slice(2).join("|"));
+          if (parts[0] !== "OK") throw new Error("Unexpected load response");
+          const n = Number(parts[2]);
+          if (!Number.isInteger(n) || n < 3 || n > 48 || parts.length !== n + 3)
+            throw new Error("Invalid saved cut vertex count");
+          const restored = parts.slice(3).map(pair => {
+            const xy = pair.split(",");
+            if (xy.length !== 2 || !xy[0].trim() || !xy[1].trim())
+              throw new Error("Invalid saved cut vertex format");
+            const x = Number(xy[0]), y = Number(xy[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(y))
+              throw new Error("Invalid saved cut coordinates");
+            return {x, y};
+          });
+          points = restored;
+          closed = true;
+          dragIndex = -1;
+          rebuildOverlay();
+          setStatus(`Load successful: ${n} vertices from macro/pid_f2.root (not applied)`);
+          loaded = true;
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      if (!loaded) throw new Error("Load timed out. Check enana terminal and saved file.");
+    } catch (err) {
+      console.error(err);
+      setStatus("Load error: " + String(err.message || err));
+    } finally {
+      cutLoading = false;
+      updateControls();
+    }
+  }
+  loadBtn.addEventListener("click", loadCut);
+
 
   updateControls();
   refreshHistogram();

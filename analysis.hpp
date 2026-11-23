@@ -96,6 +96,7 @@ public:
   void MakeTHttp(int portnum);
   void HttpHistReset();
   void ProcessCutSaveRequest();  // save a browser-edited cut (no live apply)  
+  void ProcessCutLoadRequest();  // read saved ROOT TCutG without applying it
 
   // defined in ana_event.cpp
   void ana_event();
@@ -149,6 +150,8 @@ private:
   // ROOT thread; ProcessCutSaveRequest() validates and saves the payload.
   TNamed cutSaveRequest{"cut_save_request", ""};
   TNamed cutSaveResult{"cut_save_result", "IDLE"};
+  TNamed cutLoadRequest{"cut_load_request", ""};
+  TNamed cutLoadResult{"cut_load_result", "IDLE"};
 
   // PID file
   TCutG *pid_f2;

@@ -12,6 +12,8 @@ void analysis::MakeTHttp(int portnum){
   // The analysis thread validates them and writes the ROOT file.
   serv->Register("/CutEditor", &cutSaveRequest);
   serv->Register("/CutEditor", &cutSaveResult);
+  serv->Register("/CutEditor", &cutLoadRequest);
+  serv->Register("/CutEditor", &cutLoadResult);
   /* auto refresh every 1 sec */
   serv->SetItemField("/", "_update", "1000");
   serv->SetItemField("/", "_updateperiod", "1000");

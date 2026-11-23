@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -57,6 +58,71 @@ analysis::analysis(){
 }
 
 analysis::~analysis(){
+}
+
+// Load Cut request wire format: a decimal request ID set in cut_load_request.
+// Loads the *saved* TCutG; it never replaces pid_f2 used by analysis.
+// Response: OK|request-id|N|x1,y1|...|xN,yN (without a repeated closing vertex)
+void analysis::ProcessCutLoadRequest(){
+  const std::string id = cutLoadRequest.GetTitle();
+  if (id.empty()) return;
+  cutLoadRequest.SetTitle("");
+
+  auto fail = [&](const std::string &reason) {
+    cutLoadResult.SetTitle(("ERROR|" + id + "|" + reason).c_str());
+    printf("Cut load failed: %s\n", reason.c_str());
+  };
+
+  if (id.size() > 32 ||
+      !std::all_of(id.begin(), id.end(), [](unsigned char c) {
+        return c >= '0' && c <= '9';
+      })) {
+    fail("Invalid request ID");
+    return;
+  }
+
+  TDirectory::TContext restoreDirectory;
+  TFile input("macro/pid_f2.root", "READ");
+  if (input.IsZombie()) {
+    fail("Cannot open macro/pid_f2.root");
+    return;
+  }
+  auto *cut = dynamic_cast<TCutG*>(input.Get("pidcut_f2"));
+  if (!cut) {
+    fail("pidcut_f2 was not found in macro/pid_f2.root");
+    return;
+  }
+
+  int n = cut->GetN();
+  if (n < 3 || n > 49) {
+    fail("Saved cut must contain 3 to 48 vertices");
+    return;
+  }
+
+  // Save Cut writes a polygon with its first vertex repeated at the end.
+  double first_x = 0.0, first_y = 0.0;
+  double last_x = 0.0, last_y = 0.0;
+  cut->GetPoint(0, first_x, first_y);
+  cut->GetPoint(n-1, last_x, last_y);
+  if (n >= 4 && first_x == last_x && first_y == last_y) --n;
+  if (n < 3 || n > 48) {
+    fail("Saved cut must contain 3 to 48 unique vertices");
+    return;
+  }
+
+  std::ostringstream response;
+  response << "OK|" << id << "|" << n << std::setprecision(17);
+  for (int i=0; i<n; ++i) {
+    double x = 0.0, y = 0.0;
+    cut->GetPoint(i, x, y);
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+      fail("Saved cut has invalid coordinates");
+      return;
+    }
+    response << "|" << x << "," << y;
+  }
+  cutLoadResult.SetTitle(response.str().c_str());
+  printf("Loaded saved Web TCutG pidcut_f2 (%d vertices) from macro/pid_f2.root (not applied)\n", n);
 }
 
 // Save request wire format (URL encoded as SetTitle argument):
@@ -399,6 +465,7 @@ void analysis::analyze(){
     // to let http server process requests
     bool exit_requested = gSystem->ProcessEvents();
     ProcessCutSaveRequest();
+    ProcessCutLoadRequest();
     if(exit_requested) break;
     if( opt.online_flag==1 && IsRIDFeof()){
       printf("Waiting for data... (eve: %d) sleep_cnt=%d\r",evt.eve, evt.sleep_cnt);
@@ -476,6 +543,7 @@ void analysis::analyze_online(){
       sem_v(semid, &semb);     // Unlock shared memory before HTTP handling
       bool exit_requested = gSystem->ProcessEvents();
       ProcessCutSaveRequest();
+      ProcessCutLoadRequest();
       if (exit_requested || STOP_FLAG==1) break;
       usleep(100000);
       continue;
@@ -601,6 +669,7 @@ void analysis::analyze_online(){
     // to let http server process requests
     bool exit_requested = gSystem->ProcessEvents();
     ProcessCutSaveRequest();
+    ProcessCutLoadRequest();
     if(exit_requested) break;
 
     if(STOP_FLAG==1){
