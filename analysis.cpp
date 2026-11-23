@@ -11,7 +11,195 @@
 #include <stdexcept>
 #include <vector>
 #include <TDirectory.h>
+#include <dirent.h>
+#include <sys/stat.h>
 // #define ONLINE_DEBUG
+
+// F2 cut files are intentionally restricted to plain .root filenames in macro/.
+namespace {
+std::string cutPercentDecode(const std::string &encoded) {
+  auto hex = [](char ch) -> int {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+  };
+  std::string decoded;
+  decoded.reserve(encoded.size());
+  for (std::size_t i = 0; i < encoded.size(); ++i) {
+    if (encoded[i] == '%' && i + 2 < encoded.size()) {
+      const int hi = hex(encoded[i+1]);
+      const int lo = hex(encoded[i+2]);
+      if (hi >= 0 && lo >= 0) {
+        decoded.push_back(static_cast<char>((hi << 4) | lo));
+        i += 2;
+        continue;
+      }
+    }
+    decoded.push_back(encoded[i]);
+  }
+  return decoded;
+}
+
+bool validCutRequestId(const std::string &id) {
+  return !id.empty() && id.size() <= 32 &&
+         std::all_of(id.begin(), id.end(), [](unsigned char c) {
+           return c >= '0' && c <= '9';
+         });
+}
+
+bool validCutFileName(const std::string &name) {
+  if (name.size() < 6 || name.size() > 69 ||
+      name.compare(name.size() - 5, 5, ".root") != 0 ||
+      name.find("..") != std::string::npos) return false;
+  if (!((name[0] >= 'A' && name[0] <= 'Z') ||
+        (name[0] >= 'a' && name[0] <= 'z') ||
+        (name[0] >= '0' && name[0] <= '9'))) return false;
+  for (char c : name) {
+    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-'))
+      return false;
+  }
+  return true;
+}
+
+std::string cutFilePath(const std::string &name) {
+  return "macro/" + name;
+}
+
+// Do not follow symbolic links out of the macro/ directory.
+bool checkCutFileType(const std::string &path, bool mustExist,
+                      std::string &error) {
+  struct stat info;
+  if (lstat(path.c_str(), &info) != 0) {
+    if (!mustExist && errno == ENOENT) return true;
+    error = "Cannot access " + path + ": " + std::strerror(errno);
+    return false;
+  }
+  if (!S_ISREG(info.st_mode)) {
+    error = "Cut file is not a regular file: " + path;
+    return false;
+  }
+  return true;
+}
+
+bool cutPolygonValid(const std::vector<std::pair<double,double>> &vertices) {
+  const std::size_t n = vertices.size();
+  if (n < 3 || n > 48) return false;
+  double twice_area = 0.;
+  double xmin = vertices[0].first, xmax = xmin;
+  double ymin = vertices[0].second, ymax = ymin;
+  for (std::size_t i = 0; i < n; ++i) {
+    const auto &a = vertices[i];
+    const auto &b = vertices[(i+1)%n];
+    if (!std::isfinite(a.first) || !std::isfinite(a.second)) return false;
+    const double ax = a.first - vertices[0].first;
+    const double ay = a.second - vertices[0].second;
+    const double bx = b.first - vertices[0].first;
+    const double by = b.second - vertices[0].second;
+    twice_area += ax*by - bx*ay;
+    xmin = std::min(xmin, a.first); xmax = std::max(xmax, a.first);
+    ymin = std::min(ymin, a.second); ymax = std::max(ymax, a.second);
+  }
+  const double span_area = (xmax-xmin)*(ymax-ymin);
+  return std::isfinite(twice_area) && std::isfinite(span_area) &&
+         span_area > 0 && std::abs(twice_area) > span_area*1.e-10;
+}
+
+bool loadF2CutVertices(const std::string &name,
+                       std::vector<std::pair<double,double>> &vertices,
+                       std::string &error) {
+  const std::string path = cutFilePath(name);
+  if (!checkCutFileType(path, true, error)) return false;
+  TDirectory::TContext restoreDirectory;
+  TFile input(path.c_str(), "READ");
+  if (input.IsZombie()) {
+    error = "Cannot open " + path;
+    return false;
+  }
+  auto *cut = dynamic_cast<TCutG*>(input.Get("pidcut_f2"));
+  if (!cut) {
+    error = "pidcut_f2 was not found in " + path;
+    return false;
+  }
+  int n = cut->GetN();
+  if (n < 3 || n > 49) {
+    error = "Saved cut must contain 3 to 48 vertices";
+    return false;
+  }
+  double fx = 0., fy = 0., lx = 0., ly = 0.;
+  cut->GetPoint(0, fx, fy);
+  cut->GetPoint(n-1, lx, ly);
+  if (n >= 4 && fx == lx && fy == ly) --n;
+  if (n < 3 || n > 48) {
+    error = "Saved cut must contain 3 to 48 unique vertices";
+    return false;
+  }
+  vertices.clear();
+  vertices.reserve(n);
+  for (int i=0; i<n; ++i) {
+    double x = 0., y = 0.;
+    cut->GetPoint(i, x, y);
+    vertices.emplace_back(x,y);
+  }
+  if (!cutPolygonValid(vertices)) {
+    error = "Saved cut contains invalid or degenerate coordinates";
+    return false;
+  }
+  return true;
+}
+
+bool parseEditorPolygon(const std::vector<std::string> &fields,
+                        std::size_t countField, 
+                        std::vector<std::pair<double,double>> &vertices,
+                        std::string &error) {
+  std::size_t n = 0;
+  if (fields.size() <= countField) {
+    error = "Missing vertex count";
+    return false;
+  }
+  try {
+    std::size_t pos = 0;
+    n = std::stoul(fields[countField], &pos, 10);
+    if (pos != fields[countField].size()) throw std::invalid_argument("not integer");
+  } catch (...) {
+    error = "Invalid vertex count";
+    return false;
+  }
+  if (n < 3 || n > 48 || fields.size() != n + countField + 1) {
+    error = "Expected 3 to 48 vertices";
+    return false;
+  }
+  vertices.clear();
+  vertices.reserve(n);
+  for (std::size_t i=0; i<n; ++i) {
+    const std::string &s = fields[i+countField+1];
+    const auto comma = s.find(',');
+    if (comma == std::string::npos || s.find(',', comma+1) != std::string::npos) {
+      error = "Invalid vertex format";
+      return false;
+    }
+    try {
+      std::size_t px = 0, py = 0;
+      const double x = std::stod(s.substr(0,comma), &px);
+      const double y = std::stod(s.substr(comma+1), &py);
+      if (px != comma || py != s.size()-comma-1 ||
+          !std::isfinite(x) || !std::isfinite(y))
+        throw std::invalid_argument("invalid numeric coordinate");
+      vertices.emplace_back(x,y);
+    } catch (...) {
+      error = "Invalid numeric coordinates";
+      return false;
+    }
+  }
+  if (!cutPolygonValid(vertices)) {
+    error = "Degenerate polygon";
+    return false;
+  }
+  return true;
+}
+}
+
 
 analysis::analysis(){
   evt.eve=0;
@@ -63,111 +251,68 @@ analysis::~analysis(){
 // Load Cut request wire format: a decimal request ID set in cut_load_request.
 // Loads the *saved* TCutG; it never replaces pid_f2 used by analysis.
 // Response: OK|request-id|N|x1,y1|...|xN,yN (without a repeated closing vertex)
+// Load Cut accepts either the legacy numeric request ID (default file) or
+// v2|request-id|filename.root. Returns editor coordinates without applying.
 void analysis::ProcessCutLoadRequest(){
-  const std::string id = cutLoadRequest.GetTitle();
-  if (id.empty()) return;
+  const std::string raw = cutLoadRequest.GetTitle();
+  if (raw.empty()) return;
   cutLoadRequest.SetTitle("");
-
+  const std::string payload = cutPercentDecode(raw);
+  std::string id = payload, name = "pid_f2.root";
+  if (payload.compare(0, 3, "v2|") == 0) {
+    std::vector<std::string> fields;
+    std::istringstream in(payload);
+    std::string field;
+    while (std::getline(in, field, '|')) fields.push_back(field);
+    if (fields.size() != 3) {
+      cutLoadResult.SetTitle("ERROR|unknown|Malformed load request");
+      return;
+    }
+    id = fields[1];
+    name = fields[2];
+  }
   auto fail = [&](const std::string &reason) {
     cutLoadResult.SetTitle(("ERROR|" + id + "|" + reason).c_str());
     printf("Cut load failed: %s\n", reason.c_str());
   };
-
-  if (id.size() > 32 ||
-      !std::all_of(id.begin(), id.end(), [](unsigned char c) {
-        return c >= '0' && c <= '9';
-      })) {
+  if (!validCutRequestId(id)) {
     fail("Invalid request ID");
     return;
   }
-
-  TDirectory::TContext restoreDirectory;
-  TFile input("macro/pid_f2.root", "READ");
-  if (input.IsZombie()) {
-    fail("Cannot open macro/pid_f2.root");
+  if (!validCutFileName(name)) {
+    fail("Invalid cut filename (use a .root basename in macro/)");
     return;
   }
-  auto *cut = dynamic_cast<TCutG*>(input.Get("pidcut_f2"));
-  if (!cut) {
-    fail("pidcut_f2 was not found in macro/pid_f2.root");
+  std::vector<std::pair<double,double>> vertices;
+  std::string error;
+  if (!loadF2CutVertices(name, vertices, error)) {
+    fail(error);
     return;
   }
-
-  int n = cut->GetN();
-  if (n < 3 || n > 49) {
-    fail("Saved cut must contain 3 to 48 vertices");
-    return;
-  }
-
-  // Save Cut writes a polygon with its first vertex repeated at the end.
-  double first_x = 0.0, first_y = 0.0;
-  double last_x = 0.0, last_y = 0.0;
-  cut->GetPoint(0, first_x, first_y);
-  cut->GetPoint(n-1, last_x, last_y);
-  if (n >= 4 && first_x == last_x && first_y == last_y) --n;
-  if (n < 3 || n > 48) {
-    fail("Saved cut must contain 3 to 48 unique vertices");
-    return;
-  }
-
   std::ostringstream response;
-  response << "OK|" << id << "|" << n << std::setprecision(17);
-  for (int i=0; i<n; ++i) {
-    double x = 0.0, y = 0.0;
-    cut->GetPoint(i, x, y);
-    if (!std::isfinite(x) || !std::isfinite(y)) {
-      fail("Saved cut has invalid coordinates");
-      return;
-    }
-    response << "|" << x << "," << y;
-  }
+  response << "OK|" << id << "|" << vertices.size() << std::setprecision(17);
+  for (const auto &p : vertices) response << "|" << p.first << "," << p.second;
   cutLoadResult.SetTitle(response.str().c_str());
-  printf("Loaded saved Web TCutG pidcut_f2 (%d vertices) from macro/pid_f2.root (not applied)\n", n);
+  printf("Loaded saved Web TCutG pidcut_f2 (%zu vertices) from %s (not applied)\n",
+         vertices.size(), cutFilePath(name).c_str());
 }
 
 // Save request wire format (URL encoded as SetTitle argument):
 //   v1|request-id|N|x1,y1|x2,y2|...|xN,yN
 // The editor only saves F2; no code is executed from user-supplied text.
+// Save Cut accepts legacy v1|id|N|x,y... (default file) and
+// v2|id|filename.root|N|x,y... (selected file).
 void analysis::ProcessCutSaveRequest(){
-  // THttpServer may leave URL percent-encoding in the SetTitle() argument.
-  // Decode only well-formed %XX sequences. If already decoded, keep it intact.
-  auto decodePercent = [](const std::string &encoded) {
-    auto hex = [](char ch) -> int {
-      if (ch >= '0' && ch <= '9') return ch - '0';
-      if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
-      if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-      return -1;
-    };
-    std::string decoded;
-    decoded.reserve(encoded.size());
-    for (std::size_t i = 0; i < encoded.size(); ++i) {
-      if (encoded[i] == '%' && i + 2 < encoded.size()) {
-        const int hi = hex(encoded[i+1]);
-        const int lo = hex(encoded[i+2]);
-        if (hi >= 0 && lo >= 0) {
-          decoded.push_back(static_cast<char>((hi << 4) | lo));
-          i += 2;
-          continue;
-        }
-      }
-      decoded.push_back(encoded[i]);
-    }
-    return decoded;
-  };
-
-  const std::string encoded = cutSaveRequest.GetTitle();
-  if (encoded.empty()) return;
+  const std::string raw = cutSaveRequest.GetTitle();
+  if (raw.empty()) return;
   cutSaveRequest.SetTitle("");
-  const std::string payload = decodePercent(encoded);
-
+  const std::string payload = cutPercentDecode(raw);
   std::vector<std::string> fields;
-  std::istringstream input(payload);
+  std::istringstream in(payload);
   std::string field;
-  while (std::getline(input, field, '|')) fields.push_back(field);
+  while (std::getline(in, field, '|')) fields.push_back(field);
   if (fields.size() < 3) {
     cutSaveResult.SetTitle("ERROR|unknown|Malformed cut request");
-    printf("Cut save failed: Malformed cut request (%zu fields, %zu encoded bytes)\n",
-           fields.size(), encoded.size());
     return;
   }
   const std::string id = fields[1];
@@ -175,149 +320,92 @@ void analysis::ProcessCutSaveRequest(){
     cutSaveResult.SetTitle(("ERROR|" + id + "|" + reason).c_str());
     printf("Cut save failed: %s\n", reason.c_str());
   };
-  if (fields[0] != "v1" || id.empty() || id.size() > 32 ||
-      !std::all_of(id.begin(), id.end(), [](unsigned char c){ return c >= '0' && c <= '9'; })) {
+  const bool v1 = (fields[0] == "v1");
+  const bool v2 = (fields[0] == "v2");
+  if ((!v1 && !v2) || !validCutRequestId(id)) {
     fail("Invalid request ID or protocol");
     return;
   }
-  std::size_t n = 0;
-  try {
-    std::size_t pos = 0;
-    n = std::stoul(fields[2], &pos, 10);
-    if (pos != fields[2].size()) throw std::invalid_argument("not an integer");
-  } catch (...) {
-    fail("Invalid vertex count");
+  const std::size_t countField = v2 ? 3 : 2;
+  const std::string name = v2 && fields.size() > 2 ? fields[2] : "pid_f2.root";
+  if (!validCutFileName(name)) {
+    fail("Invalid cut filename (use a .root basename in macro/)");
     return;
   }
-  if (n < 3 || n > 48 || fields.size() != n + 3) {
-    fail("Expected 3 to 48 vertices");
-    return;
-  }
-
   std::vector<std::pair<double,double>> vertices;
-  vertices.reserve(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    const std::string &s = fields[i+3];
-    const auto comma = s.find(',');
-    if (comma == std::string::npos || s.find(',', comma+1) != std::string::npos) {
-      fail("Invalid vertex format");
-      return;
-    }
-    try {
-      std::size_t px = 0, py = 0;
-      double x = std::stod(s.substr(0,comma), &px);
-      double y = std::stod(s.substr(comma+1), &py);
-      if (px != comma || py != s.size()-comma-1 ||
-          !std::isfinite(x) || !std::isfinite(y)) throw std::invalid_argument("invalid coordinate");
-      vertices.emplace_back(x,y);
-    } catch (...) {
-      fail("Invalid numeric coordinates");
-      return;
-    }
-  }
-  // Area check with coordinates translated to first vertex to reduce
-  // floating-point cancellation for axes far from zero.
-  double twice_area = 0.;
-  double xmin = vertices[0].first, xmax = xmin;
-  double ymin = vertices[0].second, ymax = ymin;
-  for (std::size_t i=0; i<n; ++i) {
-    const auto &a = vertices[i];
-    const auto &b = vertices[(i+1)%n];
-    double ax = a.first - vertices[0].first;
-    double ay = a.second - vertices[0].second;
-    double bx = b.first - vertices[0].first;
-    double by = b.second - vertices[0].second;
-    twice_area += ax*by-bx*ay;
-    xmin = std::min(xmin,a.first); xmax = std::max(xmax,a.first);
-    ymin = std::min(ymin,a.second); ymax = std::max(ymax,a.second);
-  }
-  const double span_area = (xmax-xmin)*(ymax-ymin);
-  if (!std::isfinite(twice_area) || !std::isfinite(span_area) ||
-      span_area <= 0 || std::abs(twice_area) <= span_area*1.e-10) {
-    fail("Degenerate polygon");
+  std::string error;
+  if (!parseEditorPolygon(fields, countField, vertices, error)) {
+    fail(error);
     return;
   }
-
-  const char *tmp_name = "macro/pid_f2.root.tmp";
-  const char *final_name = "macro/pid_f2.root";
+  const std::string finalName = cutFilePath(name);
+  const std::string tmpName = cutFilePath("." + name + ".tmp");
+  if (!checkCutFileType(finalName, false, error) ||
+      !checkCutFileType(tmpName, false, error)) {
+    fail(error);
+    return;
+  }
+  // Never overwrite unrelated ROOT files (e.g. macro/pid_f3.root).
+  struct stat existingInfo;
+  if (lstat(finalName.c_str(), &existingInfo) == 0) {
+    std::vector<std::pair<double,double>> existingCut;
+    if (!loadF2CutVertices(name, existingCut, error)) {
+      fail("Refusing to overwrite an existing file without a valid pidcut_f2: " + error);
+      return;
+    }
+  }
   {
     TDirectory::TContext restoreDirectory;
-    TFile output(tmp_name, "RECREATE");
+    TFile output(tmpName.c_str(), "RECREATE");
     if (output.IsZombie()) {
       fail("Cannot open temporary ROOT file");
       return;
     }
-    // The named TCutG constructor deletes any matching object in ROOT specials.
-    // Use the default constructor to avoid deleting the active pid_f2 cut.
+    // Never use the named TCutG constructor: ROOT can delete a same-named cut
+    // from its specials list while that cut is still active in analysis.
     TCutG cut;
     cut.SetName("pidcut_f2");
     cut.SetVarX("rf[2]-ref_tdc");
     cut.SetVarY("ssd.ene[0]");
-    for (std::size_t i=0; i<n; ++i)
-      cut.SetPoint(static_cast<Int_t>(i),vertices[i].first,vertices[i].second);
-    cut.SetPoint(static_cast<Int_t>(n),vertices[0].first,vertices[0].second);
+    for (std::size_t i=0; i<vertices.size(); ++i)
+      cut.SetPoint(static_cast<Int_t>(i), vertices[i].first, vertices[i].second);
+    cut.SetPoint(static_cast<Int_t>(vertices.size()),
+                 vertices[0].first, vertices[0].second);
     output.cd();
     const auto written = cut.Write("pidcut_f2", TObject::kOverwrite);
     output.Close();
     if (written <= 0 || output.TestBit(TFile::kWriteError)) {
-      std::remove(tmp_name);
+      std::remove(tmpName.c_str());
       fail("ROOT file write failed");
       return;
     }
   }
-  if (std::rename(tmp_name, final_name) != 0) {
+  if (std::rename(tmpName.c_str(), finalName.c_str()) != 0) {
     const std::string reason = std::strerror(errno);
-    std::remove(tmp_name);
+    std::remove(tmpName.c_str());
     fail("Could not replace cut file: " + reason);
     return;
   }
-  cutSaveResult.SetTitle(("OK|" + id + "|Saved to macro/pid_f2.root").c_str());
+  cutSaveResult.SetTitle(("OK|" + id + "|Saved to " + finalName).c_str());
   printf("Saved Web TCutG pidcut_f2 (%zu vertices) to %s (not applied to running analysis)\n",
-         n, final_name);
+         vertices.size(), finalName.c_str());
 }
 
 // Apply Cut: replaces only the in-memory F2 PID cut; does not change the ROOT file.
 // Already-filled events, histograms and tree entries are unchanged.
+// Apply Cut accepts an edited polygon (v1|id|N|x,y...) OR a selected saved
+// file (file2|id|filename.root). Neither operation writes the ROOT cut file.
 void analysis::ProcessCutApplyRequest(){
-  // THttpServer may leave URL percent-encoding in the SetTitle() argument.
-  // Decode only well-formed %XX sequences. If already decoded, keep it intact.
-  auto decodePercent = [](const std::string &encoded) {
-    auto hex = [](char ch) -> int {
-      if (ch >= '0' && ch <= '9') return ch - '0';
-      if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
-      if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-      return -1;
-    };
-    std::string decoded;
-    decoded.reserve(encoded.size());
-    for (std::size_t i = 0; i < encoded.size(); ++i) {
-      if (encoded[i] == '%' && i + 2 < encoded.size()) {
-        const int hi = hex(encoded[i+1]);
-        const int lo = hex(encoded[i+2]);
-        if (hi >= 0 && lo >= 0) {
-          decoded.push_back(static_cast<char>((hi << 4) | lo));
-          i += 2;
-          continue;
-        }
-      }
-      decoded.push_back(encoded[i]);
-    }
-    return decoded;
-  };
-
-  const std::string encoded = cutApplyRequest.GetTitle();
-  if (encoded.empty()) return;
+  const std::string raw = cutApplyRequest.GetTitle();
+  if (raw.empty()) return;
   cutApplyRequest.SetTitle("");
-  const std::string payload = decodePercent(encoded);
-
+  const std::string payload = cutPercentDecode(raw);
   std::vector<std::string> fields;
-  std::istringstream input(payload);
+  std::istringstream in(payload);
   std::string field;
-  while (std::getline(input, field, '|')) fields.push_back(field);
+  while (std::getline(in, field, '|')) fields.push_back(field);
   if (fields.size() < 3) {
     cutApplyResult.SetTitle("ERROR|unknown|Malformed cut request");
-    printf("Cut apply failed: Malformed cut request (%zu fields, %zu encoded bytes)\n",
-           fields.size(), encoded.size());
     return;
   }
   const std::string id = fields[1];
@@ -325,87 +413,81 @@ void analysis::ProcessCutApplyRequest(){
     cutApplyResult.SetTitle(("ERROR|" + id + "|" + reason).c_str());
     printf("Cut apply failed: %s\n", reason.c_str());
   };
-  if (fields[0] != "v1" || id.empty() || id.size() > 32 ||
-      !std::all_of(id.begin(), id.end(), [](unsigned char c){ return c >= '0' && c <= '9'; })) {
-    fail("Invalid request ID or protocol");
+  if (!validCutRequestId(id)) {
+    fail("Invalid request ID");
     return;
   }
-  std::size_t n = 0;
-  try {
-    std::size_t pos = 0;
-    n = std::stoul(fields[2], &pos, 10);
-    if (pos != fields[2].size()) throw std::invalid_argument("not an integer");
-  } catch (...) {
-    fail("Invalid vertex count");
-    return;
-  }
-  if (n < 3 || n > 48 || fields.size() != n + 3) {
-    fail("Expected 3 to 48 vertices");
-    return;
-  }
-
   std::vector<std::pair<double,double>> vertices;
-  vertices.reserve(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    const std::string &s = fields[i+3];
-    const auto comma = s.find(',');
-    if (comma == std::string::npos || s.find(',', comma+1) != std::string::npos) {
-      fail("Invalid vertex format");
+  std::string error, source;
+  if (fields[0] == "file2") {
+    if (fields.size() != 3 || !validCutFileName(fields[2])) {
+      fail("Invalid cut filename (use a .root basename in macro/)");
       return;
     }
-    try {
-      std::size_t px = 0, py = 0;
-      double x = std::stod(s.substr(0,comma), &px);
-      double y = std::stod(s.substr(comma+1), &py);
-      if (px != comma || py != s.size()-comma-1 ||
-          !std::isfinite(x) || !std::isfinite(y)) throw std::invalid_argument("invalid coordinate");
-      vertices.emplace_back(x,y);
-    } catch (...) {
-      fail("Invalid numeric coordinates");
+    source = cutFilePath(fields[2]);
+    if (!loadF2CutVertices(fields[2], vertices, error)) {
+      fail(error);
       return;
     }
-  }
-  // Area check with coordinates translated to first vertex to reduce
-  // floating-point cancellation for axes far from zero.
-  double twice_area = 0.;
-  double xmin = vertices[0].first, xmax = xmin;
-  double ymin = vertices[0].second, ymax = ymin;
-  for (std::size_t i=0; i<n; ++i) {
-    const auto &a = vertices[i];
-    const auto &b = vertices[(i+1)%n];
-    double ax = a.first - vertices[0].first;
-    double ay = a.second - vertices[0].second;
-    double bx = b.first - vertices[0].first;
-    double by = b.second - vertices[0].second;
-    twice_area += ax*by-bx*ay;
-    xmin = std::min(xmin,a.first); xmax = std::max(xmax,a.first);
-    ymin = std::min(ymin,a.second); ymax = std::max(ymax,a.second);
-  }
-  const double span_area = (xmax-xmin)*(ymax-ymin);
-  if (!std::isfinite(twice_area) || !std::isfinite(span_area) ||
-      span_area <= 0 || std::abs(twice_area) <= span_area*1.e-10) {
-    fail("Degenerate polygon");
+  } else if (fields[0] == "v1") {
+    if (!parseEditorPolygon(fields, 2, vertices, error)) {
+      fail(error);
+      return;
+    }
+    source = "edited polygon";
+  } else {
+    fail("Invalid protocol");
     return;
   }
-
-  // Install the validated polygon in memory. Do not modify the saved ROOT file.
-  // Avoid the named constructor: ROOT otherwise deletes an existing cut
-  // with the same name, potentially invalidating pid_f2.
+  // Construct unnamed, then SetName: ROOT's named TCutG constructor may
+  // delete an existing same-name cut and leave pid_f2 dangling.
   auto *next = new TCutG();
   next->SetName("pidcut_f2");
   next->SetVarX("rf[2]-ref_tdc");
   next->SetVarY("ssd.ene[0]");
-  for (std::size_t i=0; i<n; ++i)
+  for (std::size_t i=0; i<vertices.size(); ++i)
     next->SetPoint(static_cast<Int_t>(i), vertices[i].first, vertices[i].second);
-  next->SetPoint(static_cast<Int_t>(n), vertices[0].first, vertices[0].second);
-
+  next->SetPoint(static_cast<Int_t>(vertices.size()),
+                 vertices[0].first, vertices[0].second);
   TCutG *previous = pid_f2;
   pid_f2 = next;
   evt.use_pid_f2 = 1;
   delete previous;
+  cutApplyResult.SetTitle(("OK|" + id + "|Applied " + source).c_str());
+  printf("Applied Web TCutG pidcut_f2 (%zu vertices) from %s: subsequent events only\n",
+         vertices.size(), source.c_str());
+}
 
-  cutApplyResult.SetTitle(("OK|" + id + "|Applied to subsequent events").c_str());
-  printf("Applied Web TCutG pidcut_f2 (%zu vertices): subsequent events only\n", n);
+
+// List existing .root filenames under macro/ for the browser's picker.
+// Only plain regular files are exposed; the protocol never accepts a path.
+void analysis::ProcessCutListRequest(){
+  const std::string id = cutListRequest.GetTitle();
+  if (id.empty()) return;
+  cutListRequest.SetTitle("");
+  if (!validCutRequestId(id)) {
+    cutListResult.SetTitle("ERROR|unknown|Invalid request ID");
+    return;
+  }
+  DIR *dir = opendir("macro");
+  if (!dir) {
+    cutListResult.SetTitle(("ERROR|" + id + "|Cannot open macro directory").c_str());
+    return;
+  }
+  std::vector<std::string> files;
+  while (auto *entry = readdir(dir)) {
+    const std::string name(entry->d_name);
+    if (!validCutFileName(name)) continue;
+    std::string error;
+    if (checkCutFileType(cutFilePath(name), true, error))
+      files.push_back(name);
+  }
+  closedir(dir);
+  std::sort(files.begin(), files.end());
+  std::ostringstream response;
+  response << "OK|" << id;
+  for (const auto &name : files) response << "|" << name;
+  cutListResult.SetTitle(response.str().c_str());
 }
 
 void analysis::SetPID(int pidnum){
@@ -601,6 +683,7 @@ void analysis::analyze(){
     bool exit_requested = gSystem->ProcessEvents();
     ProcessCutSaveRequest();
     ProcessCutLoadRequest();
+    ProcessCutListRequest();
     ProcessCutApplyRequest();
     if(exit_requested) break;
     if( opt.online_flag==1 && IsRIDFeof()){
@@ -680,6 +763,7 @@ void analysis::analyze_online(){
       bool exit_requested = gSystem->ProcessEvents();
       ProcessCutSaveRequest();
       ProcessCutLoadRequest();
+    ProcessCutListRequest();
       ProcessCutApplyRequest();
       if (exit_requested || STOP_FLAG==1) break;
       usleep(100000);
@@ -807,6 +891,7 @@ void analysis::analyze_online(){
     bool exit_requested = gSystem->ProcessEvents();
     ProcessCutSaveRequest();
     ProcessCutLoadRequest();
+    ProcessCutListRequest();
     ProcessCutApplyRequest();
     if(exit_requested) break;
 

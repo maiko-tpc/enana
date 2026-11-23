@@ -14,6 +14,8 @@ void analysis::MakeTHttp(int portnum){
   serv->Register("/CutEditor", &cutSaveResult);
   serv->Register("/CutEditor", &cutLoadRequest);
   serv->Register("/CutEditor", &cutLoadResult);
+  serv->Register("/CutEditor", &cutListRequest);
+  serv->Register("/CutEditor", &cutListResult);
   serv->Register("/CutEditor", &cutApplyRequest);
   serv->Register("/CutEditor", &cutApplyResult);
   /* auto refresh every 1 sec */

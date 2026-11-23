@@ -97,6 +97,7 @@ public:
   void HttpHistReset();
   void ProcessCutSaveRequest();  // save a browser-edited cut (no live apply)  
   void ProcessCutLoadRequest();  // read saved ROOT TCutG without applying it
+  void ProcessCutListRequest();  // enumerate cut files in macro/
   void ProcessCutApplyRequest(); // apply a browser polygon to subsequent events
 
   // defined in ana_event.cpp
@@ -153,6 +154,8 @@ private:
   TNamed cutSaveResult{"cut_save_result", "IDLE"};
   TNamed cutLoadRequest{"cut_load_request", ""};
   TNamed cutLoadResult{"cut_load_result", "IDLE"};
+  TNamed cutListRequest{"cut_list_request", ""};
+  TNamed cutListResult{"cut_list_result", "IDLE"};
   TNamed cutApplyRequest{"cut_apply_request", ""};
   TNamed cutApplyResult{"cut_apply_result", "IDLE"};
 
