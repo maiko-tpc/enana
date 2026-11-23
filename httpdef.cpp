@@ -4,6 +4,11 @@ bool bResetHist = FALSE;
 
 void analysis::MakeTHttp(int portnum){
   serv = new THttpServer(Form("http:%d?thrds=2;rw", portnum));
+
+  // TCutG editor page
+  serv->AddLocation("cutui/", "./web/cutui");
+
+
   /* auto refresh every 1 sec */
   serv->SetItemField("/", "_update", "1000");
   serv->SetItemField("/", "_updateperiod", "1000");
