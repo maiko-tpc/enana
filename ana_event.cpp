@@ -33,14 +33,14 @@ void analysis::ana_event(){
   }
   
   for(int i=0; i<2; i++){ // X & Y angle loop
-    evt.ppac_ang[0][i] = (ppac[1].pos_cal[i] - ppac[0].pos_cal[i])/400.0; //F2
+    evt.ppac_ang[0][i] = (ppac[1].pos_cal[i] - ppac[0].pos_cal[i])/482.0; //F2
     evt.ppac_ang[1][i] = (ppac[3].pos_cal[i] - ppac[2].pos_cal[i])/500.0; //F3   
   }
 
   // calculate F2 viewer position
   if(evt.ppac_good[0]==1 && evt.ppac_good[1]==1){
-    evt.f2_pos[0] = ppac[1].pos_cal[0] + 1000*evt.ppac_ang[0][0];
-    evt.f2_pos[1] = ppac[1].pos_cal[1] + 1000*evt.ppac_ang[0][1];    
+    evt.f2_pos[0] = ppac[1].pos_cal[0] + 293*evt.ppac_ang[0][0];
+    evt.f2_pos[1] = ppac[1].pos_cal[1] + 293*evt.ppac_ang[0][1];    
   }
 
   
