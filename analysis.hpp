@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <string.h>
 #include <vector>
+#include <memory>
 #include <ncurses.h>
 #include <time.h>
 
@@ -101,6 +102,8 @@ public:
   void ProcessCutLoadRequest();  // read saved ROOT TCutG without applying it
   void ProcessCutListRequest();  // enumerate cut files in macro/
   void ProcessCutApplyRequest(); // apply a browser polygon to subsequent events
+  void ProcessGenericCutRequest(); // generic 1D/2D cuts via Registry
+  bool PassGenericF2Cut() const; // evaluate active generic cut for current event
 
   // defined in ana_event.cpp
   void ana_event();
@@ -162,6 +165,15 @@ private:
   TNamed cutApplyResult{"cut_apply_result", "IDLE"};
   CutHistogramRegistry cutHistogramRegistry;
   TNamed cutHistogramRegistryInfo{"cut_histogram_registry", "[]"};
+  TNamed genericCutRequest{"generic_cut_request", ""};
+  TNamed genericCutResult{"generic_cut_result", "IDLE"};
+  struct GenericF2Cut {
+    bool active = false;
+    std::string histogram;
+    int dimension = 0;
+    double lower = 0., upper = 0.;
+    std::unique_ptr<TCutG> polygon;
+  } genericF2Cut;
 
   // PID file
   TCutG *pid_f2;

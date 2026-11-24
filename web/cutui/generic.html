@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>enana — Generic Histogram Cut Editor</title>
+<style>
+:root { font-family:system-ui,-apple-system,sans-serif; color:#1e3146; }
+body { margin:0; background:#f3f6fa; }
+main { max-width:1160px; padding:0 14px; margin:22px auto; }
+header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+h1 { font-size:1.44rem; margin:0; } a { color:#1765a0; }
+.panel { background:white; border:1px solid #dce3eb; border-radius:11px; padding:16px; margin:14px 0; }
+.row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.row + .row { margin-top:12px; }
+label { font-weight:600; font-size:.91rem; }
+input,select,button { font:inherit; border:1px solid #aabdcf; border-radius:6px; padding:7px 10px; background:white; color:inherit; }
+select { min-width:220px; max-width:100%; flex:1; }
+input[type=number] { width:140px; }
+input[type=text] { width:225px; max-width:85%; }
+button { background:#f6faff; cursor:pointer; }
+button:hover:not(:disabled) { background:#e5f1ff; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+button.primary { background:#195fa7; color:white; border-color:#195fa7; }
+button.primary:hover:not(:disabled) { background:#124d89; }
+#histogram { height:min(68vh,620px); min-height:390px; width:100%; }
+#status { color:#355370; font-size:.91rem; overflow-wrap:anywhere; }
+.hint { font-size:.9rem; color:#526981; line-height:1.45; }
+#variables { white-space:pre-wrap; background:#f5f8fb; padding:10px; border-radius:6px; font:13px/1.5 ui-monospace,monospace; }
+.cutui-generic-layer circle { cursor:grab; }
+.cutui-generic-layer circle:active { cursor:grabbing; }
+#range-controls[hidden], #polygon-controls[hidden] { display:none; }
+</style>
+</head>
+<body><main>
+<header><h1>enana — Generic Histogram Cut Editor</h1><a href="/cutui/index.html">F2 Cut Editor</a></header>
+<section class="panel">
+  <div class="row">
+    <label for="hist-select">Histogram</label>
+    <select id="hist-select"><option value="">Loading histogram registry...</option></select>
+    <button id="refresh" type="button">Refresh histogram</button>
+  </div>
+  <pre id="variables">Loading histogram variables...</pre>
+  <div id="histogram"></div>
+  <div id="range-controls" class="row" hidden>
+    <label for="lower">Lower limit</label><input id="lower" type="number" step="any" placeholder="Minimum">
+    <label for="upper">Upper limit</label><input id="upper" type="number" step="any" placeholder="Maximum">
+    <button id="reset-range" type="button">Set range by 2 clicks</button>
+    <span class="hint">Click two positions on the 1D plot, or enter limits. Drag the yellow boundaries to adjust.</span>
+  </div>
+  <div id="polygon-controls" class="row" hidden>
+    <button id="new-cut" type="button">New polygon</button>
+    <button id="undo" type="button">Undo last vertex</button>
+    <button id="close" type="button" class="primary">Close polygon</button>
+    <span class="hint">Click to add vertices; close the polygon; drag yellow handles to edit.</span>
+  </div>
+</section>
+<section class="panel">
+  <div class="row">
+    <label for="filename">Cut file (macro/)</label>
+    <input id="filename" type="text" list="cut-files" value="pid_f2.root" spellcheck="false" autocomplete="off">
+    <datalist id="cut-files"><option value="pid_f2.root"></option></datalist>
+    <button id="files-refresh" type="button">Refresh file list</button>
+  </div>
+  <div class="row">
+    <button id="save" type="button">Save Cut</button>
+    <button id="load" type="button">Load Cut</button>
+    <button id="apply-edited" type="button" class="primary">Apply Edited</button>
+    <button id="apply-saved" type="button">Apply Saved</button>
+  </div>
+  <p id="status" role="status">Ready</p>
+  <p class="hint">Applying a cut replaces the running <code>is_pid_f2</code> selection for subsequent events only. It does not recalculate previous events. Save/Load do not apply automatically. The original F2 editor and default <code>macro/pid_f2.root</code> remain available. Only one generic selection can be active at a time.</p>
+</section>
+</main>
+<script type="module">
+import { httpRequest, draw, redraw } from "/jsrootsys/modules/main.mjs";
+const $ = id => document.getElementById(id);
+const ns="http://www.w3.org/2000/svg";
+const status = msg => { $("status").textContent=msg; };
+let mappings=[], current=null, painter=null, frame=null, frameSvg=null;
+let vertices=[], closed=false, lower=null, upper=null, firstClick=null;
+let busy=false, histogramLoading=false, dragging=null;
+const controls=["save","load","apply-edited","apply-saved","hist-select","filename"];
+
+function shape(tag, attrs={}) {
+  const element=document.createElementNS(ns,tag);
+  for(const [key,value] of Object.entries(attrs)) element.setAttribute(key,String(value));
+  return element;
+}
+function selectedFilename() {
+  const name=$("filename").value.trim();
+  if(!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.root$/.test(name) || name.includes(".."))
+    throw Error("Use a plain .root filename, without directories");
+  return name;
+}
+function availableCut() {
+  if(!current) return false;
+  if(current.dimension===1) return Number.isFinite(lower)&&Number.isFinite(upper)&&lower<upper;
+  return closed && vertices.length>=3 && vertices.length<=48;
+}
+function updateControls() {
+  for(const id of controls) $(id).disabled=busy||histogramLoading;
+  $("save").disabled=busy||histogramLoading||!availableCut();
+  $("apply-edited").disabled=busy||histogramLoading||!availableCut();
+  $("undo").disabled=busy||!current||current.dimension!==2||closed||vertices.length===0;
+  $("close").disabled=busy||!current||current.dimension!==2||closed||vertices.length<3;
+  $("new-cut").disabled=busy;
+  $("reset-range").disabled=busy;
+}
+function localPixels(ev) {
+  if(!frameSvg) return null;
+  const t=frameSvg.getScreenCTM();
+  if(!t) return null;
+  const p=frameSvg.ownerSVGElement.createSVGPoint();
+  p.x=ev.clientX; p.y=ev.clientY;
+  return p.matrixTransform(t.inverse());
+}
+function pixelValue(ev,clamp=false) {
+  if(!frame) return null;
+  const p=localPixels(ev);
+  if(!p) return null;
+  const w=frame.getFrameWidth(),h=frame.getFrameHeight();
+  if(!clamp&&(p.x<0||p.x>w||p.y<0||p.y>h)) return null;
+  const x=clamp?Math.max(0,Math.min(w,p.x)):p.x;
+  const y=clamp?Math.max(0,Math.min(h,p.y)):p.y;
+  const result={x:frame.revertAxis("x",x),y:current?.dimension===2?frame.revertAxis("y",y):0};
+  if(!Number.isFinite(result.x)||!Number.isFinite(result.y)) return null;
+  return result;
+}
+function refreshOverlay() {
+  if(!frame||!frameSvg||!current) return;
+  frameSvg.querySelectorAll(":scope > .cutui-generic-layer").forEach(x=>x.remove());
+  const layer=shape("g",{class:"cutui-generic-layer"});
+  const w=frame.getFrameWidth(),h=frame.getFrameHeight();
+  const surface=shape("rect",{x:0,y:0,width:w,height:h,fill:"transparent","pointer-events":"all"});
+  surface.style.cursor=current.dimension===2&&!closed?"crosshair":"crosshair";
+  surface.addEventListener("pointerdown",ev=>{
+    if(ev.button!==0||busy)return;
+    const p=pixelValue(ev);
+    if(!p)return;
+    ev.preventDefault();ev.stopPropagation();
+    if(current.dimension===1){
+      if(firstClick===null){firstClick=p.x;lower=p.x;upper=null;status("First range limit selected. Click the second limit.");}
+      else { lower=Math.min(firstClick,p.x);upper=Math.max(firstClick,p.x);firstClick=null;status("Range selected. Drag the limits to adjust."); }
+      syncRange();
+    } else if(!closed) {
+      if(vertices.length>=48){status("Maximum 48 vertices");return;}
+      vertices.push(p);refreshOverlay();status(`${vertices.length} vertices`);
+    }
+    refreshOverlay();
+  });
+  layer.appendChild(surface);
+  if(current.dimension===1){
+    if(Number.isFinite(lower)&&Number.isFinite(upper)&&lower<upper){
+      const xa=frame.grx(lower),xb=frame.grx(upper);
+      layer.appendChild(shape("rect",{x:Math.min(xa,xb),y:0,width:Math.abs(xb-xa),height:h,
+        fill:"#edae37","fill-opacity":0.24,"pointer-events":"none"}));
+    }
+    for(const [which,value] of [["lower",lower],["upper",upper]]){
+      if(!Number.isFinite(value))continue;
+      const x=frame.grx(value);
+      const line=shape("line",{x1:x,x2:x,y1:0,y2:h,stroke:"#cb8f0f","stroke-width":3,"pointer-events":"stroke"});
+      line.style.cursor="ew-resize";
+      line.addEventListener("pointerdown",ev=>{if(ev.button!==0)return;ev.preventDefault();ev.stopPropagation();dragging={type:"range",which};});
+      layer.appendChild(line);
+    }
+  }else if(vertices.length){
+    const pixel=vertices.map(p=>({x:frame.grx(p.x),y:frame.gry(p.y)}));
+    layer.appendChild(shape(closed?"polygon":"polyline",{points:pixel.map(p=>`${p.x},${p.y}`).join(" "),
+      fill:closed?"rgba(245,165,28,0.15)":"none",stroke:"#f2a120","stroke-width":2.6,
+      "stroke-linejoin":"round","pointer-events":"none"}));
+    pixel.forEach((p,index)=>{
+      const circle=shape("circle",{cx:p.x,cy:p.y,r:5.5,fill:"#ffce54",stroke:"#664200","stroke-width":1.5});
+      circle.addEventListener("pointerdown",ev=>{
+        if(ev.button!==0||busy)return;
+        ev.preventDefault();ev.stopPropagation();dragging={type:"point",index};
+      });
+      layer.appendChild(circle);
+    });
+  }
+  frameSvg.appendChild(layer);
+  updateControls();
+}
+function syncRange() {
+  $("lower").value=Number.isFinite(lower)?String(lower):"";
+  $("upper").value=Number.isFinite(upper)?String(upper):"";
+  updateControls();
+}
+window.addEventListener("pointermove",ev=>{
+  if(!dragging)return;
+  const p=pixelValue(ev,true);if(!p)return;
+  if(dragging.type==="point")vertices[dragging.index]=p;
+  else {
+    if(dragging.which==="lower")lower=p.x;
+    else upper=p.x;
+    syncRange();
+  }
+  refreshOverlay();
+});
+window.addEventListener("pointerup",()=>dragging=null);
+window.addEventListener("pointercancel",()=>dragging=null);
+for(const [id,field] of [["lower","lower"],["upper","upper"]]){
+  $(id).addEventListener("input",()=>{
+    const val=$(id).value.trim();
+    if(field==="lower")lower=val===""?null:Number(val);
+    else upper=val===""?null:Number(val);
+    firstClick=null;refreshOverlay();
+  });
+}
+$("reset-range").addEventListener("click",()=>{firstClick=null;lower=null;upper=null;syncRange();refreshOverlay();status("Click twice to define the range");});
+$("new-cut").addEventListener("click",()=>{vertices=[];closed=false;dragging=null;refreshOverlay();status("Click the plot to add vertices");});
+$("undo").addEventListener("click",()=>{if(!closed)vertices.pop();refreshOverlay();});
+$("close").addEventListener("click",()=>{
+  if(vertices.length<3)return;
+  const first=vertices[0];let a=0.;
+  for(let i=0;i<vertices.length;i++){
+    const p=vertices[i],q=vertices[(i+1)%vertices.length];
+    a+=(p.x-first.x)*(q.y-first.y)-(q.x-first.x)*(p.y-first.y);
+  }
+  if(Math.abs(a)<1e-9){status("Invalid polygon area");return;}
+  closed=true;refreshOverlay();status("Polygon closed. Drag vertices to adjust.");
+});
+
+async function refreshHistogram(){
+  if(!current||histogramLoading)return;
+  histogramLoading=true;updateControls();status(`Loading ${current.name}...`);
+  try{
+    const hist=await httpRequest(current.path+"/root.json", "object");
+    const type=String(hist?._typename||"");
+    if(!type.startsWith("TH") || (current.dimension===2&&!type.startsWith("TH2")) ||
+       (current.dimension===1&&type.startsWith("TH2")))
+      throw Error("Histogram dimension mismatch");
+    // Redraw is used only when the histogram dimensions match the previous painter.
+    const next=painter?await redraw("histogram",hist,current.dimension===2?"colz":"hist")
+                      :await draw("histogram",hist,current.dimension===2?"colz":"hist");
+    painter=next||painter;
+    frame=painter?.getFramePainter?.();
+    frameSvg=frame?.getFrameSvg?.().node();
+    if(!frameSvg||typeof frame.grx!=="function"||typeof frame.revertAxis!=="function")
+      throw Error("JSROOT axis conversions are unavailable");
+    refreshOverlay();status(`Showing ${current.name}`);
+  }catch(error){console.error(error);status("Display error: "+error.message);}
+  finally{histogramLoading=false;updateControls();}
+}
+$("refresh").addEventListener("click",refreshHistogram);
+async function selectHistogram(name,reset=true){
+  const next=mappings.find(m=>m.name===name);if(!next)throw Error("Histogram not found in registry");
+  const was2=current?.dimension===2;
+  current=next;$("hist-select").value=name;
+  $("variables").textContent=`${next.name} (${next.dimension}D)\nX: ${next.x}`+
+    (next.dimension===2?`\nY: ${next.y}`:"")+`\nFill condition: ${next.condition}`;
+  $("range-controls").hidden=next.dimension!==1;
+  $("polygon-controls").hidden=next.dimension!==2;
+  if(reset){
+    vertices=[];closed=false;lower=null;upper=null;firstClick=null;syncRange();
+    $("filename").value=name==="h_pid_f2"?"pid_f2.root":`cut_${name}.root`;
+  }
+  // A 1D painter cannot safely be reused for a 2D redraw (and vice versa).
+  if(was2!==undefined && was2!==(next.dimension===2)) {
+    painter=null;frame=null;frameSvg=null;
+    $("histogram").replaceChildren();
+  }
+  await refreshHistogram();
+}
+$("hist-select").addEventListener("change",()=>{
+  selectHistogram($("hist-select").value).catch(error=>status("Selection error: "+error.message));
+});
+async function loadMappings(){
+  const obj=await httpRequest("/CutEditor/cut_histogram_registry/root.json","object");
+  const mappingsValue=JSON.parse(String(obj?.fTitle||"[]"));
+  if(!Array.isArray(mappingsValue)||mappingsValue.length===0 ||
+     !mappingsValue.every(m=>typeof m.name==="string"&&(m.dimension===1||m.dimension===2)&&typeof m.path==="string"))
+     throw Error("No valid histogram metadata found");
+  mappings=mappingsValue;
+  $("hist-select").replaceChildren();
+  mappings.forEach(m=>{
+    const opt=document.createElement("option");opt.value=m.name;
+    opt.textContent=`${m.name} — ${m.dimension}D — ${m.title}`;$("hist-select").appendChild(opt);
+  });
+  await selectHistogram(mappings.some(m=>m.name==="h_pid_f2")?"h_pid_f2":mappings[0].name);
+}
+function definitionFields(){
+  if(!availableCut())throw Error("Please complete the cut first");
+  const result=[current.name,String(current.dimension)];
+  if(current.dimension===1)return [...result,String(lower),String(upper)];
+  return [...result,String(vertices.length),...vertices.map(p=>`${p.x.toPrecision(15)},${p.y.toPrecision(15)}`)];
+}
+async function sendRequest(action,fields){
+  const id=String(Date.now());
+  const payload=["g1",id,action,...fields].join("|");
+  const url="/CutEditor/generic_cut_request/exe.json?method=SetTitle&title="+encodeURIComponent(payload);
+  const response=await fetch(url,{cache:"no-store"});
+  if(!response.ok)throw Error(`HTTP ${response.status} sending ${action} request`);
+  const deadline=Date.now()+12000;
+  while(Date.now()<deadline){
+    const reply=await fetch("/CutEditor/generic_cut_result/root.json?nocache="+Date.now(),{cache:"no-store"});
+    if(!reply.ok)throw Error(`HTTP ${reply.status} reading cut result`);
+    const obj=await reply.json();
+    const parts=String(obj?.fTitle||"").split("|");
+    if(parts[1]===id){
+      if(parts[0]==="ERROR")throw Error(parts.slice(2).join("|"));
+      if(parts[0]!=="OK")throw Error("Unexpected response");
+      return parts.slice(2);
+    }
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  throw Error(`${action} timed out. Check the enana terminal.`);
+}
+async function operation(name,task){
+  if(busy)return;
+  busy=true;updateControls();status(name+"...");
+  try{await task();}catch(error){console.error(error);status(name+" error: "+String(error.message||error));}
+  finally{busy=false;updateControls();}
+}
+async function loadSavedFile(file){
+  const fields=await sendRequest("L",[file]);
+  const hist=fields[0],dim=Number(fields[1]);
+  const target=mappings.find(m=>m.name===hist&&m.dimension===dim);
+  if(!target)throw Error("Saved histogram is not in registry");
+  await selectHistogram(hist);
+  // selectHistogram suggests another file name; restore the user's selection.
+  $("filename").value=file;
+  if(dim===1){
+    if(fields.length!==4)throw Error("Invalid saved 1D definition");
+    lower=Number(fields[2]);upper=Number(fields[3]);
+    if(!availableCut())throw Error("Invalid saved 1D range");
+    syncRange();
+  }else{
+    const count=Number(fields[2]);
+    if(!Number.isInteger(count)||count<3||count>48||fields.length!==3+count)
+      throw Error("Invalid saved polygon count");
+    const restored=fields.slice(3).map(pair=>{
+      const a=pair.split(",");
+      if(a.length!==2)throw Error("Invalid saved vertex format");
+      const x=Number(a[0]),y=Number(a[1]);
+      if(!Number.isFinite(x)||!Number.isFinite(y))throw Error("Invalid saved vertex value");
+      return {x,y};
+    });
+    vertices=restored;closed=true;
+  }
+  refreshOverlay();
+}
+$("save").addEventListener("click",()=>operation("Save Cut",async()=>{
+  const filename=selectedFilename();
+  if(!window.confirm(`Save the edited cut to macro/${filename}? Existing contents may be replaced.`))return;
+  await sendRequest("S",[filename,...definitionFields()]);
+  status(`Saved macro/${filename} (not applied)`);
+  refreshFiles();
+}));
+$("load").addEventListener("click",()=>operation("Load Cut",async()=>{
+  const file=selectedFilename();
+  if(!window.confirm(`Load macro/${file} and discard the current edited selection?`))return;
+  await loadSavedFile(file);
+  status(`Loaded macro/${file} (not applied)`);
+}));
+$("apply-edited").addEventListener("click",()=>operation("Apply Edited",async()=>{
+  if(!window.confirm(`Apply ${current.name} to the is_pid_f2 selection for subsequent events?`))return;
+  await sendRequest("A",definitionFields());
+  status(`Applied edited ${current.name} to is_pid_f2 (future events only)`);
+}));
+$("apply-saved").addEventListener("click",()=>operation("Apply Saved",async()=>{
+  const file=selectedFilename();
+  if(!window.confirm(`Load and apply macro/${file} to is_pid_f2? Unsaved edits will be discarded.`))return;
+  await loadSavedFile(file);
+  await sendRequest("F",[file]);
+  status(`Applied macro/${file} to is_pid_f2 (future events only)`);
+}));
+async function refreshFiles(){
+  try{
+    const id=String(Date.now());
+    const request=await fetch("/CutEditor/cut_list_request/exe.json?method=SetTitle&title="+id,{cache:"no-store"});
+    if(!request.ok)throw Error("Could not request cut file list");
+    const deadline=Date.now()+10000;
+    while(Date.now()<deadline){
+      const reply=await httpRequest("/CutEditor/cut_list_result/root.json?nocache="+Date.now(),"object");
+      const parts=String(reply?.fTitle||"").split("|");
+      if(parts[1]===id){
+        if(parts[0]!=="OK")throw Error(parts.slice(2).join("|"));
+        $("cut-files").replaceChildren();
+        for(const name of parts.slice(2)){
+          const opt=document.createElement("option");opt.value=name;$("cut-files").appendChild(opt);
+        }
+        return;
+      }
+      await new Promise(resolve=>setTimeout(resolve,250));
+    }
+  }catch(error){console.error("Cut-file list:",error);}
+}
+$("files-refresh").addEventListener("click",refreshFiles);
+updateControls();
+loadMappings().then(refreshFiles).catch(error=>status("Initialization error: "+error.message));
+</script>
+</body></html>

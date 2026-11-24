@@ -19,6 +19,8 @@ void analysis::MakeTHttp(int portnum){
   serv->Register("/CutEditor", &cutApplyRequest);
   serv->Register("/CutEditor", &cutApplyResult);
   serv->Register("/CutEditor", &cutHistogramRegistryInfo);
+  serv->Register("/CutEditor", &genericCutRequest);
+  serv->Register("/CutEditor", &genericCutResult);
   /* auto refresh every 1 sec */
   serv->SetItemField("/", "_update", "1000");
   serv->SetItemField("/", "_updateperiod", "1000");

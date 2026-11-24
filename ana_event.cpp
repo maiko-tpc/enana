@@ -54,7 +54,11 @@ void analysis::ana_event(){
 
   
   // PID ana
-  if(evt.use_pid_f2){
+  if (genericF2Cut.active) {
+    // The selected histogram's registered callback supplies the event value.
+    // The registry's Fill validity conditions apply to the cut as well.
+    evt.is_pid_f2 = PassGenericF2Cut() ? 1 : 0;
+  } else if(evt.use_pid_f2){
     double x = 0., y = 0.;
     if (pid_f2 && cutHistogramRegistry.GetEventPoint("h_pid_f2", evt, x, y))
       evt.is_pid_f2 = pid_f2->IsInside(x, y);

@@ -451,6 +451,7 @@ void analysis::ProcessCutApplyRequest(){
                  vertices[0].first, vertices[0].second);
   TCutG *previous = pid_f2;
   pid_f2 = next;
+  genericF2Cut.active = false; // Legacy F2 Apply overrides generic selection
   evt.use_pid_f2 = 1;
   delete previous;
   cutApplyResult.SetTitle(("OK|" + id + "|Applied " + source).c_str());
@@ -685,6 +686,7 @@ void analysis::analyze(){
     ProcessCutLoadRequest();
     ProcessCutListRequest();
     ProcessCutApplyRequest();
+    ProcessGenericCutRequest();
     if(exit_requested) break;
     if( opt.online_flag==1 && IsRIDFeof()){
       printf("Waiting for data... (eve: %d) sleep_cnt=%d\r",evt.eve, evt.sleep_cnt);
@@ -765,6 +767,7 @@ void analysis::analyze_online(){
       ProcessCutLoadRequest();
     ProcessCutListRequest();
       ProcessCutApplyRequest();
+      ProcessGenericCutRequest();
       if (exit_requested || STOP_FLAG==1) break;
       usleep(100000);
       continue;
@@ -893,6 +896,7 @@ void analysis::analyze_online(){
     ProcessCutLoadRequest();
     ProcessCutListRequest();
     ProcessCutApplyRequest();
+    ProcessGenericCutRequest();
     if(exit_requested) break;
 
     if(STOP_FLAG==1){
