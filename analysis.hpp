@@ -30,6 +30,7 @@
 #include "config.h"
 #include "decoder.hpp"
 #include "evtdata.hpp"
+#include "cut_histogram_registry.hpp"
 #include "ana_event.hpp"
 
 /* babirl */
@@ -88,6 +89,7 @@ public:
   // defined in histdef.cpp
   void HistDef();
   void HistFill();
+  const CutHistogramRegistry& GetCutHistogramRegistry() const { return cutHistogramRegistry; }
   
   // defined in treedef.cpp
   void TreeDef();
@@ -158,6 +160,8 @@ private:
   TNamed cutListResult{"cut_list_result", "IDLE"};
   TNamed cutApplyRequest{"cut_apply_request", ""};
   TNamed cutApplyResult{"cut_apply_result", "IDLE"};
+  CutHistogramRegistry cutHistogramRegistry;
+  TNamed cutHistogramRegistryInfo{"cut_histogram_registry", "[]"};
 
   // PID file
   TCutG *pid_f2;

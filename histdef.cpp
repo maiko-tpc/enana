@@ -111,6 +111,97 @@ void analysis::HistDef(){
     }
   }
   
+
+  // Explicit histogram <-> event-value bindings.  These mappings deliberately
+  // exclude multi-fill histograms (tracks, MWDC hit patterns, MADC total).
+  // The callback is the actual value extractor; the expression is a label.
+  for (int i = 0; i < N_MADC_CH; ++i) {
+    cutHistogramRegistry.Register1D(hmadc[i], "/MADC",
+      "madc.adc[" + std::to_string(i) + "]",
+      [i](const evtdata &e) { return double(e.madc.adc[i]); });
+  }
+
+  for (int i = 0; i < N_PPAC; ++i) {
+    const std::string n = std::to_string(i);
+    cutHistogramRegistry.Register1D(hppac_good[i], "/PPAC",
+      "ppac_good[" + n + "]",
+      [i](const evtdata &e) { return double(e.ppac_good[i]); });
+
+    auto valid = [i](const evtdata &e) { return e.ppac_good[i] == 1; };
+    const std::string condition = "ppac_good[" + n + "]";
+    cutHistogramRegistry.Register2D(hppac_pos2d[i], "/PPAC",
+      "ppac_pos_raw[" + n + "][0]",
+      [i](const evtdata &e) { return double(e.ppac_pos_raw[i][0]); },
+      "ppac_pos_raw[" + n + "][1]",
+      [i](const evtdata &e) { return double(e.ppac_pos_raw[i][1]); },
+      valid, condition);
+    cutHistogramRegistry.Register2D(hppac_pos2d_cal[i], "/PPAC",
+      "ppac_pos_cal[" + n + "][0]",
+      [i](const evtdata &e) { return double(e.ppac_pos_cal[i][0]); },
+      "ppac_pos_cal[" + n + "][1]",
+      [i](const evtdata &e) { return double(e.ppac_pos_cal[i][1]); },
+      valid, condition);
+  }
+
+  auto f2Valid = [](const evtdata &e) {
+    return e.ppac_good[0] == 1 && e.ppac_good[1] == 1;
+  };
+  for (int axis = 0; axis < 2; ++axis) {
+    cutHistogramRegistry.Register1D(h_f2_pos[axis], "/PPAC",
+      "f2_pos[" + std::to_string(axis) + "]",
+      [axis](const evtdata &e) { return double(e.f2_pos[axis]); },
+      f2Valid, "ppac_good[0] && ppac_good[1]");
+  }
+
+  for (int i = 0; i < N_SSD; ++i) {
+    cutHistogramRegistry.Register1D(hssd_ene[i], "/SSD",
+      "ssd.ene[" + std::to_string(i) + "]",
+      [i](const evtdata &e) { return double(e.ssd.ene[i]); });
+  }
+
+  cutHistogramRegistry.Register2D(hpid_f2, "/PID",
+    "rf[2]-ref_tdc",
+    [](const evtdata &e) { return double(e.rf[2] - e.ref_tdc); },
+    "ssd.ene[0]",
+    [](const evtdata &e) { return double(e.ssd.ene[0]); });
+  cutHistogramRegistry.Register2D(hpid_f3, "/PID",
+    "rf[2]-ref_tdc",
+    [](const evtdata &e) { return double(e.rf[2] - e.ref_tdc); },
+    "ssd.ene[1]",
+    [](const evtdata &e) { return double(e.ssd.ene[1]); });
+
+  for (int i = 0; i < 4; ++i) {
+    cutHistogramRegistry.Register1D(h_tof_f3ppac[i], "/PID",
+      "rf[" + std::to_string(i) + "]-ref_tdc",
+      [i](const evtdata &e) { return double(e.rf[i] - e.ref_tdc); });
+  }
+
+  // HistFill() uses the F3 track extrapolated to z=attpc_z.
+  auto f3Valid = [](const evtdata &e) {
+    return e.ppac_good[2] == 1 && e.ppac_good[3] == 1;
+  };
+  auto attpcX = [](const evtdata &e) {
+    return double(e.ppac_pos_cal[2][0] + attpc_z*e.ppac_ang[1][0]);
+  };
+  auto attpcY = [](const evtdata &e) {
+    return double(e.ppac_pos_cal[2][1] + attpc_z*e.ppac_ang[1][1]);
+  };
+  const std::string attpcCondition = "ppac_good[2] && ppac_good[3]";
+  cutHistogramRegistry.Register1D(h_attpc_x, "/PPAC",
+    "ppac_pos_cal[2][0]+2400*ppac_ang[1][0]",
+    attpcX, f3Valid, attpcCondition);
+  cutHistogramRegistry.Register1D(h_attpc_y, "/PPAC",
+    "ppac_pos_cal[2][1]+2400*ppac_ang[1][1]",
+    attpcY, f3Valid, attpcCondition);
+  cutHistogramRegistry.Register2D(h_attpc_xy, "/PPAC",
+    "ppac_pos_cal[2][0]+2400*ppac_ang[1][0]", attpcX,
+    "ppac_pos_cal[2][1]+2400*ppac_ang[1][1]", attpcY,
+    f3Valid, attpcCondition);
+
+  cutHistogramRegistryInfo.SetTitle(cutHistogramRegistry.ToJson().c_str());
+  printf("Registered %zu cut histogram mappings (metadata and value callbacks)\n",
+         cutHistogramRegistry.Entries().size());
+
 } // end of histdef
 
 
@@ -134,27 +225,9 @@ constexpr double params[16][2] = {
 };
 
 void analysis::HistFill(){
-  for(int i=0; i<N_MADC_CH; i++){
-    hmadc[i]->Fill(evt.madc.adc[i]);
-  }
-
-  for(int i=0; i<N_PPAC; i++){
-    hppac_good[i]->Fill(evt.ppac_good[i]);
-
-    if(evt.ppac_good[i]==1){
-      hppac_pos2d[i]->Fill(evt.ppac_pos_raw[i][0], evt.ppac_pos_raw[i][1]);
-      hppac_pos2d_cal[i]->Fill(evt.ppac_pos_cal[i][0], evt.ppac_pos_cal[i][1]);      
-    }
-  }
-
-  if(evt.ppac_good[0]==1 && evt.ppac_good[1]==1){
-    h_f2_pos[0]->Fill(evt.f2_pos[0]);
-    h_f2_pos[1]->Fill(evt.f2_pos[1]);    
-  }
-
-  for(int i=0; i<N_SSD; i++){
-    hssd_ene[i]->Fill(evt.ssd.ene[i]);
-  }
+  // Evaluate the registered 1-point histogram variables and fill each once.
+  // The same callbacks are available to event-by-event cut evaluation.
+  cutHistogramRegistry.FillAll(evt);
 
   // track fill
   double z=0;
@@ -188,23 +261,9 @@ void analysis::HistFill(){
 	hppac_track_pid[1][1]->Fill(z, y);      
       }
 
-      if( (z-0.5)<attpc_z && (z+0.5)>attpc_z ){
-	h_attpc_x->Fill(x);
-	h_attpc_y->Fill(y);
-	h_attpc_xy->Fill(x,y);		
-      }
 
     }
   }
-
-  // PID
-  hpid_f2->Fill(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[0]);
-  hpid_f3->Fill(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[1]);  
-
-  for(int i=0; i<4; i++){
-    h_tof_f3ppac[i]->Fill(evt.rf[i]-evt.ref_tdc);
-  }
-
 
   // MWDC
   for(int i=0; i<N_MWDC; i++){

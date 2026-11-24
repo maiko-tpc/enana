@@ -55,7 +55,9 @@ void analysis::ana_event(){
   
   // PID ana
   if(evt.use_pid_f2){
-    evt.is_pid_f2 = pid_f2->IsInside(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[0]);
+    double x = 0., y = 0.;
+    if (pid_f2 && cutHistogramRegistry.GetEventPoint("h_pid_f2", evt, x, y))
+      evt.is_pid_f2 = pid_f2->IsInside(x, y);
   }
   if(evt.use_pid_f3){
     //    evt.is_pid_f3 = pid_f3->IsInside(evt.rf[2]-evt.ref_tdc, evt.ssd.ene[1]);

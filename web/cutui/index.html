@@ -62,11 +62,63 @@
     <textarea id="coordinates" readonly spellcheck="false"></textarea>
     <p class="hint">Save Cut writes the editor polygon to the selected <code>macro/*.root</code> file (overwriting that file if it exists). Load Cut retrieves the selected saved polygon. Apply Saved loads and activates the selected file; Apply Edited activates the current polygon without saving. Neither apply operation reprocesses earlier events. Default file: <code>macro/pid_f2.root</code>.</p>
   </section>
+  <section class="panel" id="histogram-mapping-panel">
+    <label for="histogram-mapping">Registered histogram variables (preview)</label>
+    <select id="histogram-mapping" style="width:100%;max-width:520px;padding:7px;border:1px solid #b7c6d8;border-radius:6px">
+      <option value="">Loading registered histograms...</option>
+    </select>
+    <pre id="histogram-mapping-info" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5">Reading histogram registry...</pre>
+    <p class="hint">This is a read-only preview of histogram-to-event mappings. The polygon editor above still edits the F2 PID histogram. Generic 1D/2D cut editing is a separate future step.</p>
+  </section>
 </main>
 <script type="module">
   import { httpRequest, draw, redraw } from "/jsrootsys/modules/main.mjs";
 
   const SVG_NS = "http://www.w3.org/2000/svg";
+  // Read-only registry viewer. No histogram switch or change to Save/Load/Apply yet.
+  const histogramMappingSelect = document.getElementById("histogram-mapping");
+  const histogramMappingInfo = document.getElementById("histogram-mapping-info");
+  let registeredHistogramMappings = [];
+  function showHistogramMapping() {
+    const m = registeredHistogramMappings.find(item => item.name === histogramMappingSelect.value);
+    if (!m) {
+      histogramMappingInfo.textContent = "No histogram mapping selected";
+      return;
+    }
+    histogramMappingInfo.textContent =
+      `Histogram: ${m.name} (${m.dimension}D)\n` +
+      `Title: ${m.title}\n` +
+      `HTTP path: ${m.path}\n` +
+      `X: ${m.x}\n` +
+      (m.dimension === 2 ? `Y: ${m.y}\n` : "") +
+      `Fill condition: ${m.condition}`;
+  }
+  histogramMappingSelect.addEventListener("change", showHistogramMapping);
+  async function loadHistogramMappings() {
+    try {
+      const result = await httpRequest("/CutEditor/cut_histogram_registry/root.json", "object");
+      const list = JSON.parse(String(result?.fTitle || "[]"));
+      if (!Array.isArray(list) || !list.every(m =>
+          m && typeof m.name === "string" && (m.dimension === 1 || m.dimension === 2)))
+        throw new Error("Invalid histogram registry data");
+      registeredHistogramMappings = list;
+      histogramMappingSelect.replaceChildren();
+      for (const m of list) {
+        const option = document.createElement("option");
+        option.value = m.name;
+        option.textContent = `${m.name} (${m.dimension}D) — ${m.title}`;
+        histogramMappingSelect.appendChild(option);
+      }
+      histogramMappingSelect.value = list.some(m => m.name === "h_pid_f2")
+        ? "h_pid_f2" : (list[0]?.name || "");
+      showHistogramMapping();
+    } catch (err) {
+      console.error(err);
+      histogramMappingInfo.textContent = "Histogram registry error: " + String(err.message || err);
+      histogramMappingSelect.replaceChildren();
+    }
+  }
+
   const statusEl = document.getElementById("status");
   const coordEl = document.getElementById("coordinates");
   const closeBtn = document.getElementById("close-cut");
@@ -556,6 +608,7 @@
 
 
   updateControls();
+  loadHistogramMappings();
   refreshHistogram();
   refreshCutFiles(true);
 </script>
