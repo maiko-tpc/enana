@@ -198,6 +198,22 @@ void analysis::HistDef(){
     "ppac_pos_cal[2][1]+2400*ppac_ang[1][1]", attpcY,
     f3Valid, attpcCondition);
 
+  // Single-call example: no analysis.hpp pointer, manual Fill(),
+  // Web registration or vector push_back is needed.
+  cutHistogramRegistry.Book1D(
+      "h_rf2_ref_booked", "RF ch2 - reference TDC (booked)", "/PID",
+      1000, 0, 5000,
+      "rf[2]-ref_tdc",
+      [](const evtdata &e) { return double(e.rf[2] - e.ref_tdc); });
+
+  cutHistogramRegistry.Book2D(
+      "h_rf0_ssd0_booked", "RF ch0 vs SSD0 energy (booked)", "/PID",
+      1000, 0, 5000, 500, 0, 60,
+      "rf[0]-ref_tdc",
+      [](const evtdata &e) { return double(e.rf[0] - e.ref_tdc); },
+      "ssd.ene[0]",
+      [](const evtdata &e) { return double(e.ssd.ene[0]); });
+
   cutHistogramRegistryInfo.SetTitle(cutHistogramRegistry.ToJson().c_str());
   printf("Registered %zu cut histogram mappings (metadata and value callbacks)\n",
          cutHistogramRegistry.Entries().size());
@@ -292,6 +308,15 @@ int analysis::CloseROOT(){
     vec_th2[i]->Write();
   }
   
+  // Booked histograms are not members of vec_th1/vec_th2.
+  // Write them exactly once, alongside the original histograms.
+  outroot->cd();
+  for (const auto &entry : cutHistogramRegistry.Entries()) {
+    if (!entry.booked) continue;
+    if (entry.dimension == 1) entry.hist1d->Write();
+    else entry.hist2d->Write();
+  }
+
   tree->Write();
   outroot->Close();
   return 0;

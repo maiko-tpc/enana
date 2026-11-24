@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <sstream>
 #include <utility>
+#include <memory>
+#include <TDirectory.h>
 
 namespace {
 std::string JsonString(const std::string &value) {
@@ -85,6 +87,56 @@ void CutHistogramRegistry::Register2D(TH2 *hist, const std::string &httpGroup,
   e.yValue = std::move(yValue);
   e.valid = std::move(valid);
   Append(std::move(e));
+}
+
+// Booked histograms are owned by the output ROOT TDirectory, just like
+// manually created TH1F/TH2F objects in enana. Entries hold non-owning pointers.
+TH1F *CutHistogramRegistry::Book1D(const std::string &name, const std::string &title,
+                                   const std::string &httpGroup,
+                                   int nBinsX, double xMin, double xMax,
+                                   const std::string &xExpression, Value xValue,
+                                   Valid valid, const std::string &condition) {
+  if (name.empty() || name.find('/') != std::string::npos || nBinsX <= 0 ||
+      !std::isfinite(xMin) || !std::isfinite(xMax) || xMin >= xMax)
+    throw std::invalid_argument("Invalid Book1D histogram name or axis range");
+  for (const auto &entry : entries_)
+    if (entry.name == name)
+      throw std::invalid_argument("Duplicate booked histogram: " + name);
+  if (gDirectory && gDirectory->FindObject(name.c_str()))
+    throw std::invalid_argument("Histogram already exists in ROOT directory: " + name);
+  std::unique_ptr<TH1F> hist(new TH1F(name.c_str(), title.c_str(), nBinsX, xMin, xMax));
+  // Explicitly associate the histogram with the current output directory.
+  if (gDirectory) hist->SetDirectory(gDirectory);
+  Register1D(hist.get(), httpGroup, xExpression, std::move(xValue),
+             std::move(valid), condition);
+  entries_.back().booked = true;
+  return hist.release();
+}
+
+TH2F *CutHistogramRegistry::Book2D(const std::string &name, const std::string &title,
+                                   const std::string &httpGroup,
+                                   int nBinsX, double xMin, double xMax,
+                                   int nBinsY, double yMin, double yMax,
+                                   const std::string &xExpression, Value xValue,
+                                   const std::string &yExpression, Value yValue,
+                                   Valid valid, const std::string &condition) {
+  if (name.empty() || name.find('/') != std::string::npos ||
+      nBinsX <= 0 || nBinsY <= 0 ||
+      !std::isfinite(xMin) || !std::isfinite(xMax) || xMin >= xMax ||
+      !std::isfinite(yMin) || !std::isfinite(yMax) || yMin >= yMax)
+    throw std::invalid_argument("Invalid Book2D histogram name or axis range");
+  for (const auto &entry : entries_)
+    if (entry.name == name)
+      throw std::invalid_argument("Duplicate booked histogram: " + name);
+  if (gDirectory && gDirectory->FindObject(name.c_str()))
+    throw std::invalid_argument("Histogram already exists in ROOT directory: " + name);
+  std::unique_ptr<TH2F> hist(new TH2F(name.c_str(), title.c_str(), nBinsX, xMin, xMax,
+                                      nBinsY, yMin, yMax));
+  if (gDirectory) hist->SetDirectory(gDirectory);
+  Register2D(hist.get(), httpGroup, xExpression, std::move(xValue),
+             yExpression, std::move(yValue), std::move(valid), condition);
+  entries_.back().booked = true;
+  return hist.release();
 }
 
 bool CutHistogramRegistry::Evaluate(const Entry &entry, const evtdata &event,

@@ -8,6 +8,8 @@
 
 class TH1;
 class TH2;
+class TH1F;
+class TH2F;
 
 // A registered histogram has one well-defined (x[,y]) point per valid event.
 // Label strings are metadata, while the C++ callbacks extract the real values.
@@ -23,6 +25,7 @@ public:
     TH2 *hist2d = nullptr;
     Value xValue, yValue;
     Valid valid;
+    bool booked = false; // true only for histograms made by Book1D/Book2D
   };
 
   void Register1D(TH1 *hist, const std::string &httpGroup,
@@ -33,6 +36,23 @@ public:
                   const std::string &xExpression, Value xValue,
                   const std::string &yExpression, Value yValue,
                   Valid valid = Valid(), const std::string &condition = "always");
+
+  // Single-call API for ordinary, one-point-per-event histograms.
+  // Creates the ROOT histogram, registers event-value extraction and metadata,
+  // and marks it for automatic Web publishing, Reset(), and ROOT writing.
+  // The returned pointer is optional: no analysis.hpp member is required.
+  TH1F *Book1D(const std::string &name, const std::string &title,
+               const std::string &httpGroup,
+               int nBinsX, double xMin, double xMax,
+               const std::string &xExpression, Value xValue,
+               Valid valid = Valid(), const std::string &condition = "always");
+  TH2F *Book2D(const std::string &name, const std::string &title,
+               const std::string &httpGroup,
+               int nBinsX, double xMin, double xMax,
+               int nBinsY, double yMin, double yMax,
+               const std::string &xExpression, Value xValue,
+               const std::string &yExpression, Value yValue,
+               Valid valid = Valid(), const std::string &condition = "always");
 
   // Returns false for an unregistered histogram, an event excluded by
   // its fill condition, or non-finite coordinates.

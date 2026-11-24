@@ -86,6 +86,18 @@ void analysis::MakeTHttp(int portnum){
     }
   }
 
+  // Auto-publish histograms created by Book1D()/Book2D().
+  // Existing registered histograms use the manual registrations above,
+  // so none of them are registered twice.
+  for (const auto &entry : cutHistogramRegistry.Entries()) {
+    if (!entry.booked) continue;
+    const auto sep = entry.path.find_last_of('/');
+    const std::string group = sep == 0 ? "/" : entry.path.substr(0, sep);
+    if (entry.dimension == 1)
+      serv->Register(group.c_str(), entry.hist1d);
+    else
+      serv->Register(group.c_str(), entry.hist2d);
+  }
 } // end of MakeHttp()
 
 void analysis::HttpHistReset(){
@@ -99,5 +111,11 @@ void analysis::HttpHistReset(){
   int size2 = vec_th2.size();
   for(int i=0; i<size2; i++){
     vec_th2[i]->Reset();
+  }
+  // Histograms booked through the Registry are not in vec_th1/vec_th2.
+  for (const auto &entry : cutHistogramRegistry.Entries()) {
+    if (!entry.booked) continue;
+    if (entry.dimension == 1) entry.hist1d->Reset();
+    else entry.hist2d->Reset();
   }
 }
