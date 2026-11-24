@@ -41,6 +41,12 @@ button.primary:hover:not(:disabled) { background:#124d89; }
   </div>
   <pre id="variables">Loading histogram variables...</pre>
   <div id="histogram"></div>
+  <div class="row" style="margin-top:10px">
+    <label>Mouse mode</label>
+    <button id="mode-edit" class="primary" type="button" aria-pressed="true">Edit Cut</button>
+    <button id="mode-navigate" type="button" aria-pressed="false">Zoom / Pan</button>
+    <span class="hint">Use Zoom / Pan to navigate the histogram; return to Edit Cut to adjust the selection.</span>
+  </div>
   <div id="range-controls" class="row" hidden>
     <label for="lower">Lower limit</label><input id="lower" type="number" step="any" placeholder="Minimum">
     <label for="upper">Upper limit</label><input id="upper" type="number" step="any" placeholder="Maximum">
@@ -79,6 +85,7 @@ const status = msg => { $("status").textContent=msg; };
 let mappings=[], current=null, painter=null, frame=null, frameSvg=null;
 let vertices=[], closed=false, lower=null, upper=null, firstClick=null;
 let busy=false, histogramLoading=false, dragging=null;
+let editMode=true, lastAxisSignature=null;
 const controls=["save","load","apply-edited","apply-saved","hist-select","filename"];
 
 function shape(tag, attrs={}) {
@@ -105,7 +112,55 @@ function updateControls() {
   $("close").disabled=busy||!current||current.dimension!==2||closed||vertices.length<3;
   $("new-cut").disabled=busy;
   $("reset-range").disabled=busy;
+  $("mode-edit").disabled=busy||histogramLoading;
+  $("mode-navigate").disabled=busy||histogramLoading;
 }
+function setMouseMode(edit) {
+  editMode=edit;
+  $("mode-edit").classList.toggle("primary",edit);
+  $("mode-navigate").classList.toggle("primary",!edit);
+  $("mode-edit").setAttribute("aria-pressed",String(edit));
+  $("mode-navigate").setAttribute("aria-pressed",String(!edit));
+  refreshOverlay();
+  status(edit ? "Edit Cut mode: adjust cut vertices or range" :
+                "Zoom / Pan mode: use JSROOT mouse navigation");
+}
+$("mode-edit").addEventListener("click",()=>setMouseMode(true));
+$("mode-navigate").addEventListener("click",()=>setMouseMode(false));
+
+// JSROOT can update its axes without calling our explicit histogram redraw.
+// Poll only the visible axis endpoints, and repaint only when they change.
+// This avoids depending on JSROOT's version-specific zoom callbacks.
+function axisSignature(fp) {
+  const w=fp.getFrameWidth(), h=fp.getFrameHeight();
+  if(!(w>0&&h>0))return null;
+  const values=[w,h,fp.revertAxis("x",0),fp.revertAxis("x",w),
+                 fp.revertAxis("y",0),fp.revertAxis("y",h)];
+  return values.map(v=>Number.isFinite(v)?v.toPrecision(13):String(v)).join("|");
+}
+function followHistogramZoom() {
+  if(!painter||!current||histogramLoading||dragging)return;
+  try {
+    const nextFrame=painter.getFramePainter?.();
+    const nextSvg=nextFrame?.getFrameSvg?.().node();
+    if(!nextSvg?.isConnected||typeof nextFrame.revertAxis!=="function")return;
+    const replaced=(nextFrame!==frame||nextSvg!==frameSvg);
+    frame=nextFrame;
+    frameSvg=nextSvg;
+    const stamp=axisSignature(frame);
+    if(!stamp)return;
+    if(replaced||stamp!==lastAxisSignature||
+       !frameSvg.querySelector(":scope > .cutui-generic-layer")) {
+      refreshOverlay();
+      lastAxisSignature=stamp;
+    }
+  } catch (err) {
+    // JSROOT may temporarily replace the frame during an animated redraw.
+    // Retry on the next tick without interrupting the editor.
+  }
+}
+setInterval(followHistogramZoom,100);
+
 function localPixels(ev) {
   if(!frameSvg) return null;
   const t=frameSvg.getScreenCTM();
@@ -131,7 +186,17 @@ function refreshOverlay() {
   frameSvg.querySelectorAll(":scope > .cutui-generic-layer").forEach(x=>x.remove());
   const layer=shape("g",{class:"cutui-generic-layer"});
   const w=frame.getFrameWidth(),h=frame.getFrameHeight();
-  const surface=shape("rect",{x:0,y:0,width:w,height:h,fill:"transparent","pointer-events":"all"});
+  // Clip the cut at the plot boundary; off-screen vertices stay in data units.
+  const clipId="cutui-generic-plot-clip";
+  const defs=shape("defs");
+  const clip=shape("clipPath",{id:clipId});
+  clip.appendChild(shape("rect",{x:0,y:0,width:w,height:h}));
+  defs.appendChild(clip);
+  layer.appendChild(defs);
+  const visual=shape("g",{"clip-path":`url(#${clipId})`,
+    "pointer-events":editMode?"auto":"none"});
+  const surface=shape("rect",{x:0,y:0,width:w,height:h,fill:"transparent",
+    "pointer-events":editMode?"all":"none"});
   surface.style.cursor=current.dimension===2&&!closed?"crosshair":"crosshair";
   surface.addEventListener("pointerdown",ev=>{
     if(ev.button!==0||busy)return;
@@ -148,35 +213,37 @@ function refreshOverlay() {
     }
     refreshOverlay();
   });
-  layer.appendChild(surface);
+  visual.appendChild(surface);
   if(current.dimension===1){
     if(Number.isFinite(lower)&&Number.isFinite(upper)&&lower<upper){
       const xa=frame.grx(lower),xb=frame.grx(upper);
-      layer.appendChild(shape("rect",{x:Math.min(xa,xb),y:0,width:Math.abs(xb-xa),height:h,
+      visual.appendChild(shape("rect",{x:Math.min(xa,xb),y:0,width:Math.abs(xb-xa),height:h,
         fill:"#edae37","fill-opacity":0.24,"pointer-events":"none"}));
     }
     for(const [which,value] of [["lower",lower],["upper",upper]]){
       if(!Number.isFinite(value))continue;
       const x=frame.grx(value);
-      const line=shape("line",{x1:x,x2:x,y1:0,y2:h,stroke:"#cb8f0f","stroke-width":3,"pointer-events":"stroke"});
+      const line=shape("line",{x1:x,x2:x,y1:0,y2:h,stroke:"#cb8f0f","stroke-width":3,"pointer-events":editMode?"stroke":"none"});
       line.style.cursor="ew-resize";
       line.addEventListener("pointerdown",ev=>{if(ev.button!==0)return;ev.preventDefault();ev.stopPropagation();dragging={type:"range",which};});
-      layer.appendChild(line);
+      visual.appendChild(line);
     }
   }else if(vertices.length){
     const pixel=vertices.map(p=>({x:frame.grx(p.x),y:frame.gry(p.y)}));
-    layer.appendChild(shape(closed?"polygon":"polyline",{points:pixel.map(p=>`${p.x},${p.y}`).join(" "),
+    visual.appendChild(shape(closed?"polygon":"polyline",{points:pixel.map(p=>`${p.x},${p.y}`).join(" "),
       fill:closed?"rgba(245,165,28,0.15)":"none",stroke:"#f2a120","stroke-width":2.6,
       "stroke-linejoin":"round","pointer-events":"none"}));
     pixel.forEach((p,index)=>{
-      const circle=shape("circle",{cx:p.x,cy:p.y,r:5.5,fill:"#ffce54",stroke:"#664200","stroke-width":1.5});
+      const circle=shape("circle",{cx:p.x,cy:p.y,r:5.5,fill:"#ffce54",stroke:"#664200","stroke-width":1.5,
+        "pointer-events":editMode?"all":"none"});
       circle.addEventListener("pointerdown",ev=>{
         if(ev.button!==0||busy)return;
         ev.preventDefault();ev.stopPropagation();dragging={type:"point",index};
       });
-      layer.appendChild(circle);
+      visual.appendChild(circle);
     });
   }
+  layer.appendChild(visual);
   frameSvg.appendChild(layer);
   updateControls();
 }
@@ -237,7 +304,9 @@ async function refreshHistogram(){
     frameSvg=frame?.getFrameSvg?.().node();
     if(!frameSvg||typeof frame.grx!=="function"||typeof frame.revertAxis!=="function")
       throw Error("JSROOT axis conversions are unavailable");
-    refreshOverlay();status(`Showing ${current.name}`);
+    refreshOverlay();
+    lastAxisSignature=axisSignature(frame);
+    status(`Showing ${current.name}`);
   }catch(error){console.error(error);status("Display error: "+error.message);}
   finally{histogramLoading=false;updateControls();}
 }
@@ -256,7 +325,7 @@ async function selectHistogram(name,reset=true){
   }
   // A 1D painter cannot safely be reused for a 2D redraw (and vice versa).
   if(was2!==undefined && was2!==(next.dimension===2)) {
-    painter=null;frame=null;frameSvg=null;
+    painter=null;frame=null;frameSvg=null;lastAxisSignature=null;
     $("histogram").replaceChildren();
   }
   await refreshHistogram();

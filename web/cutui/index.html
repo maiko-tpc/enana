@@ -55,6 +55,12 @@
       <span id="status" role="status">Ready to load</span>
     </div>
     <div id="histogram"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <span class="hint" style="margin:0">Mouse mode:</span>
+      <button id="mode-edit" class="primary" type="button" aria-pressed="true">Edit Cut</button>
+      <button id="mode-navigate" type="button" aria-pressed="false">Zoom / Pan</button>
+      <span class="hint" style="margin:0">Zoom / Pan enables JSROOT navigation; switch back to Edit Cut to adjust vertices.</span>
+    </div>
     <p class="hint">To draw a cut, click the plot to add vertices, then select “Close polygon” (at least three points). Drag the yellow handles to adjust vertices. Select “New cut” to start over.</p>
   </section>
   <section class="panel">
@@ -201,6 +207,8 @@
   let closed = false;
   let dragIndex = -1;
   let loading = false;
+  let editMode = true;
+  let lastAxisSignature = null;
 
   function setStatus(message) { statusEl.textContent = message; }
 
@@ -223,6 +231,50 @@
     for (const [key, val] of Object.entries(attributes)) elem.setAttribute(key, String(val));
     return elem;
   }
+
+  function setMouseMode(edit) {
+    editMode = edit;
+    document.getElementById("mode-edit").classList.toggle("primary", edit);
+    document.getElementById("mode-navigate").classList.toggle("primary", !edit);
+    document.getElementById("mode-edit").setAttribute("aria-pressed", String(edit));
+    document.getElementById("mode-navigate").setAttribute("aria-pressed", String(!edit));
+    rebuildOverlay();
+    setStatus(edit ? "Edit Cut mode: drag cut vertices" :
+                     "Zoom / Pan mode: use JSROOT mouse navigation");
+  }
+  document.getElementById("mode-edit").addEventListener("click", () => setMouseMode(true));
+  document.getElementById("mode-navigate").addEventListener("click", () => setMouseMode(false));
+
+  // Axis endpoints change after a JSROOT zoom even when our redraw function
+  // was not called. Poll the current painter; repaint only if axes changed.
+  function f2AxisSignature(fp) {
+    const w = fp.getFrameWidth(), h = fp.getFrameHeight();
+    if (!(w > 0 && h > 0)) return null;
+    const values = [w, h, fp.revertAxis("x", 0), fp.revertAxis("x", w),
+                    fp.revertAxis("y", 0), fp.revertAxis("y", h)];
+    return values.map(v => Number.isFinite(v) ? v.toPrecision(13) : String(v)).join("|");
+  }
+  function followF2HistogramZoom() {
+    if (!painter || loading || dragIndex >= 0) return;
+    try {
+      const nextFrame = painter.getFramePainter?.();
+      const nextElement = nextFrame?.getFrameSvg?.().node();
+      if (!nextElement?.isConnected || typeof nextFrame.revertAxis !== "function") return;
+      const replaced = nextFrame !== framePainter || nextElement !== frameElement;
+      framePainter = nextFrame;
+      frameElement = nextElement;
+      const signature = f2AxisSignature(framePainter);
+      if (!signature) return;
+      if (replaced || signature !== lastAxisSignature ||
+          !frameElement.querySelector(":scope > .cutui-layer")) {
+        rebuildOverlay();
+        lastAxisSignature = signature;
+      }
+    } catch (_) {
+      // JSROOT may temporarily rebuild SVG while zooming; retry on next tick.
+    }
+  }
+  setInterval(followF2HistogramZoom, 100);
 
   // Convert a Firefox/Chrome pointer position to JSROOT frame-local pixels.
   function pointerPixels(event) {
@@ -263,10 +315,21 @@
     const layer = svgElement("g", { class: "cutui-layer" });
     const w = framePainter.getFrameWidth();
     const h = framePainter.getFrameHeight();
+    // Clip geometry when the selection extends outside the zoomed plot.
+    const clipId = "cutui-f2-plot-clip";
+    const defs = svgElement("defs");
+    const clip = svgElement("clipPath", { id: clipId });
+    clip.appendChild(svgElement("rect", {x:0, y:0, width:w, height:h}));
+    defs.appendChild(clip);
+    layer.appendChild(defs);
+    const visual = svgElement("g", {
+      "clip-path": `url(#${clipId})`,
+      "pointer-events": editMode ? "auto" : "none"
+    });
 
     const surface = svgElement("rect", {
       x: 0, y: 0, width: w, height: h,
-      fill: "transparent", "pointer-events": "all"
+      fill: "transparent", "pointer-events": editMode ? "all" : "none"
     });
     surface.style.cursor = closed ? "default" : "crosshair";
     surface.addEventListener("pointerdown", (ev) => {
@@ -280,7 +343,7 @@
       setStatus(`Vertex added (${points.length} points)`);
       rebuildOverlay();
     });
-    layer.appendChild(surface);
+    visual.appendChild(surface);
 
     if (points.length) {
       const screen = points.map(dataToPixel);
@@ -290,13 +353,13 @@
         stroke: "#f2a120", "stroke-width": 2.6,
         "stroke-linejoin": "round", "pointer-events": "none"
       });
-      layer.appendChild(path);
+      visual.appendChild(path);
 
       screen.forEach((p, i) => {
         const circle = svgElement("circle", {
           cx: p.x, cy: p.y, r: 5.5,
           fill: "#ffce54", stroke: "#664200", "stroke-width": 1.5,
-          class: "cut-handle", "pointer-events": "all"
+          class: "cut-handle", "pointer-events": editMode ? "all" : "none"
         });
         circle.addEventListener("pointerdown", (ev) => {
           if (ev.button !== 0) return;
@@ -304,9 +367,10 @@
           ev.stopPropagation();
           dragIndex = i;
         });
-        layer.appendChild(circle);
+        visual.appendChild(circle);
       });
     }
+    layer.appendChild(visual);
     frameElement.appendChild(layer);
     updateControls();
   }
@@ -339,6 +403,7 @@
           typeof framePainter.revertAxis !== "function")
         throw new Error("Could not access the JSROOT FramePainter");
       rebuildOverlay();
+      lastAxisSignature = f2AxisSignature(framePainter);
       setStatus("Last updated: " + new Date().toLocaleTimeString("en-GB"));
     } catch (err) {
       console.error(err);
