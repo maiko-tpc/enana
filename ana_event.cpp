@@ -39,8 +39,8 @@ void analysis::ana_event(){
 
   // calculate F2 viewer position
   if(evt.ppac_good[0]==1 && evt.ppac_good[1]==1){
-    evt.f2_pos[0] = ppac[1].pos_cal[0] + 293*evt.ppac_ang[0][0];
-    evt.f2_pos[1] = ppac[1].pos_cal[1] + 293*evt.ppac_ang[0][1];    
+    evt.f2_pos[0] = ppac[1].pos_cal[0] + 293.0*evt.ppac_ang[0][0];
+    evt.f2_pos[1] = ppac[1].pos_cal[1] + 293.0*evt.ppac_ang[0][1];    
   }
 
   
