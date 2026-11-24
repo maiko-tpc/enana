@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>enana — THttpServer</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, sans-serif; color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { display: flex; flex-direction: column; background: #f3f6fa; }
+    header {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 9px 16px; background: #fff; border-bottom: 1px solid #dce3eb;
+    }
+    strong { margin-right: auto; font-size: 1rem; color: #18283a; }
+    nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    a {
+      display: inline-block; border: 1px solid #b9cada; border-radius: 6px;
+      padding: 7px 12px; color: #175a9e; background: #f8fbff;
+      text-decoration: none; font-size: 0.9rem;
+    }
+    a:hover, a:focus-visible { background: #e4f1ff; }
+    a.primary { background: #195fa7; border-color: #195fa7; color: #fff; }
+    a.primary:hover, a.primary:focus-visible { background: #124d89; }
+    iframe { display: block; flex: 1; min-height: 0; width: 100%; border: 0; background: white; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>enana — Histogram Browser</strong>
+    <nav aria-label="Cut editors">
+      <a class="primary" href="/cutui/generic.html" target="_blank" rel="noopener">Generic Cut Editor</a>
+      <a href="/cutui/index.html" target="_blank" rel="noopener">F2 Cut Editor</a>
+      <a href="/default.htm" target="_blank" rel="noopener">Open ROOT Browser</a>
+    </nav>
+  </header>
+  <!-- /default.htm is ROOT's unmodified JSROOT online browser in 6.32/6.40. -->
+  <iframe src="/default.htm" title="ROOT histogram browser"></iframe>
+</body>
+</html>

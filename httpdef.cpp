@@ -5,6 +5,10 @@ bool bResetHist = FALSE;
 void analysis::MakeTHttp(int portnum){
   serv = new THttpServer(Form("http:%d?thrds=2;rw", portnum));
 
+  // Navigation header for Cut Editors, with the original ROOT browser below.
+  // The original interface remains available at /default.htm.
+  serv->SetDefaultPage("./web/cutui/home.html");
+
   // TCutG editor page
   serv->AddLocation("cutui/", "./web/cutui");
 
