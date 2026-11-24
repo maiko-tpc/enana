@@ -1,4 +1,5 @@
 #include "cut_histogram_registry.hpp"
+#include "event_expression.hpp"
 #include <TH1.h>
 #include <TH2.h>
 #include <cmath>
@@ -139,8 +140,59 @@ TH2F *CutHistogramRegistry::Book2D(const std::string &name, const std::string &t
   return hist.release();
 }
 
+TH1F *CutHistogramRegistry::Book1D(const std::string &name, const std::string &title,
+                                   const std::string &httpGroup,
+                                   int nBinsX, double xMin, double xMax,
+                                   const std::string &xExpression,
+                                   const std::string &condition) {
+  return Book1D(name, title, httpGroup, nBinsX, xMin, xMax,
+                xExpression, enana_expression::CompileValue(xExpression),
+                enana_expression::CompileCondition(condition), condition);
+}
+
+TH2F *CutHistogramRegistry::Book2D(const std::string &name, const std::string &title,
+                                   const std::string &httpGroup,
+                                   int nBinsX, double xMin, double xMax,
+                                   int nBinsY, double yMin, double yMax,
+                                   const std::string &xExpression,
+                                   const std::string &yExpression,
+                                   const std::string &condition) {
+  return Book2D(name, title, httpGroup, nBinsX, xMin, xMax,
+                nBinsY, yMin, yMax,
+                xExpression, enana_expression::CompileValue(xExpression),
+                yExpression, enana_expression::CompileValue(yExpression),
+                enana_expression::CompileCondition(condition), condition);
+}
+
+TH1F *CutHistogramRegistry::BookManual1D(const std::string &name,
+                                          const std::string &title,
+                                          const std::string &httpGroup,
+                                          int nBinsX, double xMin, double xMax) {
+  TH1F *hist = Book1D(name, title, httpGroup, nBinsX, xMin, xMax,
+                     "multi-point (manual Fill)",
+                     [](const evtdata&) { return 0.0; });
+  entries_.back().manualFill = true;
+  return hist;
+}
+
+TH2F *CutHistogramRegistry::BookManual2D(const std::string &name,
+                                          const std::string &title,
+                                          const std::string &httpGroup,
+                                          int nBinsX, double xMin, double xMax,
+                                          int nBinsY, double yMin, double yMax) {
+  TH2F *hist = Book2D(name, title, httpGroup, nBinsX, xMin, xMax,
+                     nBinsY, yMin, yMax,
+                     "multi-point (manual Fill)",
+                     [](const evtdata&) { return 0.0; },
+                     "multi-point (manual Fill)",
+                     [](const evtdata&) { return 0.0; });
+  entries_.back().manualFill = true;
+  return hist;
+}
+
 bool CutHistogramRegistry::Evaluate(const Entry &entry, const evtdata &event,
                                     double &x, double &y) const {
+  if (entry.manualFill) return false; // no unique event coordinate
   if (entry.valid && !entry.valid(event)) return false;
   const double xv = entry.xValue(event);
   const double yv = entry.dimension == 2 ? entry.yValue(event) : 0.;
@@ -161,6 +213,7 @@ bool CutHistogramRegistry::GetEventPoint(const std::string &histogramName,
 
 void CutHistogramRegistry::FillAll(const evtdata &event) const {
   for (const auto &entry : entries_) {
+    if (entry.manualFill) continue; // separate multi-fill loop in HistFill()
     double x = 0., y = 0.;
     if (!Evaluate(entry, event, x, y)) continue;
     if (entry.dimension == 1)
@@ -173,9 +226,11 @@ void CutHistogramRegistry::FillAll(const evtdata &event) const {
 std::string CutHistogramRegistry::ToJson() const {
   std::ostringstream out;
   out << '[';
+  std::size_t emitted = 0;
   for (std::size_t i = 0; i < entries_.size(); ++i) {
     const Entry &e = entries_[i];
-    if (i) out << ',';
+    if (e.manualFill) continue; // no well-defined scalar cut variable
+    if (emitted++) out << ',';
     out << "{\"name\":" << JsonString(e.name)
         << ",\"title\":" << JsonString(e.title)
         << ",\"path\":" << JsonString(e.path)

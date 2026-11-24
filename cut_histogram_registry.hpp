@@ -25,6 +25,7 @@ public:
     TH2 *hist2d = nullptr;
     Value xValue, yValue;
     Valid valid;
+    bool manualFill = false; // special multi-point-per-event histogram; no auto Fill or cut
     bool booked = false; // true only for histograms made by Book1D/Book2D
   };
 
@@ -53,6 +54,32 @@ public:
                const std::string &xExpression, Value xValue,
                const std::string &yExpression, Value yValue,
                Valid valid = Valid(), const std::string &condition = "always");
+
+  // String-only booking. A restricted expression compiler resolves variable
+  // names and arithmetic once at startup (never per event).
+  // The legacy callback overloads above remain available for custom logic.
+  TH1F *Book1D(const std::string &name, const std::string &title,
+               const std::string &httpGroup,
+               int nBinsX, double xMin, double xMax,
+               const std::string &xExpression,
+               const std::string &condition = "always");
+  TH2F *Book2D(const std::string &name, const std::string &title,
+               const std::string &httpGroup,
+               int nBinsX, double xMin, double xMax,
+               int nBinsY, double yMin, double yMax,
+               const std::string &xExpression, const std::string &yExpression,
+               const std::string &condition = "always");
+
+  // Book an existing-style histogram with a dedicated multi-fill loop.
+  // It is published, reset, and written automatically but cannot serve as a
+  // single-point event cut. This avoids an incorrect extra auto Fill.
+  TH1F *BookManual1D(const std::string &name, const std::string &title,
+                     const std::string &httpGroup,
+                     int nBinsX, double xMin, double xMax);
+  TH2F *BookManual2D(const std::string &name, const std::string &title,
+                     const std::string &httpGroup,
+                     int nBinsX, double xMin, double xMax,
+                     int nBinsY, double yMin, double yMax);
 
   // Returns false for an unregistered histogram, an event excluded by
   // its fill condition, or non-finite coordinates.

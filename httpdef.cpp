@@ -35,60 +35,10 @@ void analysis::MakeTHttp(int portnum){
   serv->RegisterCommand("/Commands/Clear", clearcmd.c_str(),
   			"button;rootsys/icons/refresh.png");
 
-  for(int i=0; i<N_MADC_CH; i++){
-    serv->Register("/MADC", hmadc[i]);
-  }
-  serv->Register("/MADC", hmadc_total);
-  
-  for(int i=0; i<4; i++){
-    serv->Register("/PPAC", hppac_good[i]);
-  }
-  for(int i=0; i<4; i++){
-    serv->Register("/PPAC", hppac_pos2d[i]);
-  }
-  for(int i=0; i<4; i++){
-    serv->Register("/PPAC", hppac_pos2d_cal[i]);
-  }
-
-  for(int i=0; i<2; i++){
-    for(int j=0; j<2; j++){
-      serv->Register("/PPAC", hppac_track[i][j]);
-    }
-  }
-  for(int i=0; i<2; i++){
-    for(int j=0; j<2; j++){
-      serv->Register("/PPAC", hppac_track_pid[i][j]);
-    }
-  }
-
-  serv->Register("/PPAC", h_f2_pos[0]);
-  serv->Register("/PPAC", h_f2_pos[1]);  
-
-  serv->Register("/PPAC", h_attpc_x);
-  serv->Register("/PPAC", h_attpc_y);
-  serv->Register("/PPAC", h_attpc_xy);    
-  
-  for(int i=0; i<N_SSD; i++){
-    serv->Register("/SSD", hssd_ene[i]);
-  }
-
-  serv->Register("/PID", hpid_f2);
-  serv->Register("/PID", hpid_f3);  
-
-  for(int i=0; i<4; i++){
-    serv->Register("/PID", h_tof_f3ppac[i]);
-  }
-  
-  // MWDC
-  for(int i=0; i<N_MWDC; i++){
-    for(int j=0; j<N_MWDC_PLANE; j++){
-      serv->Register("/MWDC", h_mwdc_hit[i][j]);
-    }
-  }
-
+  // All histogram Web registrations are derived from Book* paths.
+  // Manual multi-point histograms are also published by this loop.
   // Auto-publish histograms created by Book1D()/Book2D().
-  // Existing registered histograms use the manual registrations above,
-  // so none of them are registered twice.
+  // All histograms were booked in one place; publish each exactly once.
   for (const auto &entry : cutHistogramRegistry.Entries()) {
     if (!entry.booked) continue;
     const auto sep = entry.path.find_last_of('/');
